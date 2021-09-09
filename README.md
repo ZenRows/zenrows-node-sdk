@@ -1,5 +1,5 @@
 # ZenRows Node.js SDK
-SDK to access [ZenRows](https://www.zenrows.com/) API directly from Node.js. We handle proxies rotation, headless browsers and CAPTCHAs for you.
+SDK to access [ZenRows](https://www.zenrows.com/) API directly from Node.js. We handle proxies rotation, headless browsers, and CAPTCHAs for you.
 
 ## Installation
 Install the SDK with npm.
@@ -11,7 +11,7 @@ npm install zenrows
 ## Usage
 Start using the API by [creating your API Key](https://app.zenrows.com/register?p=free).
 
-The SDK uses [axios](https://axios-http.com/) for HTTP requests. The client's response will be an `AxiosPromise` if using TypeScript, a normal `Promise` otherwise.
+The SDK uses [axios](https://axios-http.com/) for HTTP requests. The client's response will be an `AxiosPromise` if using TypeScript, a regular `Promise` otherwise.
 
 ```javascript
 const { ZenRows } = require('zenrows');
@@ -54,6 +54,19 @@ const url = 'https://www.zenrows.com/';
         }
     */
 })();
+```
+
+## Examples
+
+Take a look at the [examples directory](./examples) for Javascript and TypeScript files using the SDK.
+It has its own package.json file and includes `zenrows` SDK ready to use.
+Each file makes two requests, the first with CSS selectors and the second with CSS selectors and premium proxies in the US.
+
+```bash
+cd examples
+npm install
+node index.js # JS example
+npx ts-node index.ts # TS example
 ```
 
 ## Contributing
