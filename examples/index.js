@@ -27,6 +27,9 @@ const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
         */
     } catch (error) {
         console.error(error.message);
+        if (error.response) {
+            console.error(error.response.data);
+        }
     }
 
     try {
@@ -52,5 +55,8 @@ const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
         */
     } catch (error) {
         console.error(error.message);
+        if (error.response) {
+            console.error(error.response.data);
+        }
     }
 })();
