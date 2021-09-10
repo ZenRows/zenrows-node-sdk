@@ -1,0 +1,11 @@
+node_modules
+examples
+src
+tests
+jest.config.js
+tsconfig.json
+.vscode
+.idea
+.eslintignore
+.eslintrc.js
+.prettierrc.json
