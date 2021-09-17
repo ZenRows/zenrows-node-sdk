@@ -17,6 +17,12 @@
     "scraping"
   ],
   "author": "ZenRows",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZenRows/zenrows-node-sdk.git"
+  },
+  "homepage": "https://github.com/ZenRows/zenrows-node-sdk#readme",
+  "url": "https://github.com/ZenRows/zenrows-node-sdk/issues",
   "license": "ISC",
   "devDependencies": {
     "@types/jest": "^27.0.1",
