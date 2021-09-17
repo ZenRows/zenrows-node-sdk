@@ -23,7 +23,7 @@
   },
   "homepage": "https://github.com/ZenRows/zenrows-node-sdk#readme",
   "url": "https://github.com/ZenRows/zenrows-node-sdk/issues",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "@types/jest": "^27.0.1",
     "@types/node": "^16.6.0",
