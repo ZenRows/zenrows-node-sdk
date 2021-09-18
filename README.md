@@ -1,5 +1,5 @@
 # ZenRows Node.js SDK
-SDK to access [ZenRows](https://www.zenrows.com/) API directly from Node.js. We handle proxies rotation, headless browsers, and CAPTCHAs for you.
+SDK to access [ZenRows](https://www.zenrows.com/) API directly from Node.js. ZenRows handles proxies rotation, headless browsers, and CAPTCHAs for you.
 
 ## Installation
 Install the SDK with npm.
