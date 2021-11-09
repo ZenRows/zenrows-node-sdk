@@ -41,4 +41,11 @@ describe('ZenRows Client Get', () => {
         expect(response.config.params.premium_proxy).toBe(true);
         expect(response.config.params.proxy_country).toBe('us');
     });
+
+    test('should overwrite user agent from parameters', async () => {
+        const headers = { 'User-Agent': 'test' };
+        const response = await client.get(url, {}, { headers });
+
+        expect(response.config.headers['User-Agent']).toBe('test');
+    });
 });

@@ -15,6 +15,10 @@ interface Config {
     [x: string]: unknown;
 }
 
+interface Headers {
+    [x: string]: string;
+}
+
 class ZenRows {
     readonly apiKey: string;
 
@@ -22,21 +26,22 @@ class ZenRows {
         this.apiKey = apiKey;
     }
 
-    public get(url: string, config?: Config): AxiosPromise {
+    public get(url: string, config?: Config, { headers = {} }: { headers?: Headers } = {}): AxiosPromise {
         const params = {
             ...config,
             url,
             apikey: this.apiKey,
         };
 
-        const headers = {
+        const finalHeaders = {
             'User-Agent': `zenrows/${VERSION} node`,
+            ...headers,
         };
 
         const axiosRequestConfig: AxiosRequestConfig = {
             baseURL: API_URL,
             params,
-            headers,
+            headers: finalHeaders,
         };
 
         return axios(axiosRequestConfig);
