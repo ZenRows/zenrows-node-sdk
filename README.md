@@ -37,6 +37,30 @@ const url = 'https://www.zenrows.com/';
 
         // Make your request from a given country. Requires premium_proxy
         proxy_country: '',
+
+        // Wait for a given CSS Selector to load in the DOM. Requires js_render
+        wait_for: '.content',
+
+        // Wait a fixed amount of time in milliseconds. Requires js_render
+        wait: 2500,
+
+        // Block specific resources from loading, check docs for the full list. Requires js_render
+        block_resources: 'image,media,font',
+
+        // Change the browser's window width and height. Requires js_render
+        window_width: 1920,
+        window_height: 1080,
+
+        // Will automatically use either desktop or mobile user agents in the headers
+        device: 'desktop',
+
+        // Will return the status code returned by the website
+        original_status: false,
+    }, {
+        headers: {
+            Referrer: 'https://www.google.com',
+            'User-Agent': 'MyCustomUserAgent',
+        },
     });
 
     console.log(data);
@@ -55,6 +79,10 @@ const url = 'https://www.zenrows.com/';
     */
 })();
 ```
+
+You can also pass optional parameters and headers; the list above is a reference. For more info, check out [the documentation page](https://www.zenrows.com/documentation).
+
+Sending headers to the target URL will overwrite our defaults. Be careful when doing it and contact us if there is any problem.
 
 ## Examples
 

@@ -11,6 +11,14 @@ interface Config {
     js_render?: boolean;
     premium_proxy?: boolean;
     proxy_country?: string;
+    wait_for?: string;
+    wait?: number;
+    block_resources?: string;
+    window_width?: number;
+    window_height?: number;
+    device?: string;
+    original_status?: boolean;
+    custom_headers?: boolean;
     /* eslint-enable camelcase */
     [x: string]: unknown;
 }
@@ -43,6 +51,10 @@ class ZenRows {
             params,
             headers: finalHeaders,
         };
+
+        if (headers && Object.keys(headers).length) {
+            params.custom_headers = true;
+        }
 
         return axios(axiosRequestConfig);
     }

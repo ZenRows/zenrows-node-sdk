@@ -47,5 +47,6 @@ describe('ZenRows Client Get', () => {
         const response = await client.get(url, {}, { headers });
 
         expect(response.config.headers['User-Agent']).toBe('test');
+        expect(response.config.params.custom_headers).toBe(true);
     });
 });
