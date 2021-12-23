@@ -1,9 +1,13 @@
 import axios, { AxiosPromise, AxiosRequestConfig } from 'axios';
+import axiosRetry from 'axios-retry';
 
 import { VERSION } from './version';
 
 const API_URL = 'https://api.zenrows.com/v1/';
 
+interface ClientConfig {
+    retries?: number;
+}
 interface Config {
     autoparse?: boolean;
     /* eslint-disable camelcase */
@@ -30,8 +34,11 @@ interface Headers {
 class ZenRows {
     readonly apiKey: string;
 
-    constructor(apiKey: string) {
+    readonly clientConfig: ClientConfig;
+
+    constructor(apiKey: string, clientConfig: ClientConfig = {}) {
         this.apiKey = apiKey;
+        this.clientConfig = clientConfig;
     }
 
     public get(url: string, config?: Config, { headers = {} }: { headers?: Headers } = {}): AxiosPromise {
@@ -56,7 +63,26 @@ class ZenRows {
             params.custom_headers = true;
         }
 
+        this.applyRetries();
+
         return axios(axiosRequestConfig);
+    }
+
+    private applyRetries() {
+        const retries = this.clientConfig.retries ?? 0;
+        if (retries > 0) {
+            axiosRetry(axios, {
+                retries,
+                retryDelay: axiosRetry.exponentialDelay,
+                retryCondition: (error) => {
+                    if (error.response?.status === 429) {
+                        return true;
+                    }
+
+                    return axiosRetry.isNetworkOrIdempotentRequestError(error);
+                },
+            });
+        }
     }
 }
 

@@ -13,8 +13,10 @@ Start using the API by [creating your API Key](https://app.zenrows.com/register?
 
 The SDK uses [axios](https://axios-http.com/) for HTTP requests. The client's response will be an `AxiosPromise` if using TypeScript, a regular `Promise` otherwise.
 
+It also uses [axios-retry](https://github.com/softonic/axios-retry) to automatically retry failed requests (status code 429 and 5XX). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
+
 ```javascript
-const { ZenRows } = require('zenrows');
+const { ZenRows } = require('zenrows', { retries: 1 });
 
 const apiKey = 'YOUR-API-KEY';
 const url = 'https://www.zenrows.com/';

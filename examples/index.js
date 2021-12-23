@@ -6,7 +6,7 @@ const urlLinks = 'https://www.zenrows.com/';
 const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
 
 (async () => {
-    const client = new ZenRows(apiKey);
+    const client = new ZenRows(apiKey, { retries: 1 });
 
     try {
         const { data } = await client.get(urlLinks, {
