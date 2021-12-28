@@ -8,7 +8,7 @@ const urlLinks = 'https://www.zenrows.com/';
 const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
 
 (async () => {
-    const client = new ZenRows(apiKey, { retries: 1 });
+    const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
     try {
         const { data } = await client.get(urlLinks, {
@@ -48,6 +48,29 @@ const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
                 stats: 'About 10,700,000 results (0.48 seconds)'
             }
         */
+    } catch (error: unknown) {
+        console.error((error as Error).message);
+        if (axios.isAxiosError(error)) {
+            console.error(error.response?.data);
+        }
+    }
+
+    try {
+        const urls = [
+            'https://api.ipify.org',
+            'https://httpbin.org/ip',
+            'https://httpbin.org/anything',
+            'https://ident.me',
+        ];
+
+        const promises = urls.map((url) => client.get(url));
+
+        const results = await Promise.allSettled(promises);
+        const rejected = results.filter(({ status }) => status === 'rejected');
+        const fulfilled = results.filter(({ status }) => status === 'fulfilled');
+
+        console.log(rejected);
+        console.log(fulfilled);
     } catch (error: unknown) {
         console.error((error as Error).message);
         if (axios.isAxiosError(error)) {

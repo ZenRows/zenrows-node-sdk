@@ -1,6 +1,6 @@
 {
   "name": "zenrows",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "ZenRows Node SDK",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "axios": "^0.21.4",
-    "axios-retry": "^3.2.4"
+    "axios-retry": "^3.2.4",
+    "fastq": "^1.13.0"
   }
 }

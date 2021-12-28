@@ -1,6 +1,6 @@
 {
   "name": "zenrows-examples",
-  "version": "1.0.6",
+  "version": "1.2.0",
   "description": "ZenRows Node SDK Examples",
   "main": "index.js",
   "private": true,
@@ -11,6 +11,6 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^0.21.4",
-    "zenrows": "^1.1.0"
+    "zenrows": "^1.2.0"
   }
 }

@@ -1,11 +1,13 @@
 import axios, { AxiosPromise, AxiosRequestConfig } from 'axios';
 import axiosRetry from 'axios-retry';
+import * as fastq from 'fastq';
 
 import { VERSION } from './version';
 
 const API_URL = 'https://api.zenrows.com/v1/';
 
 interface ClientConfig {
+    concurrency?: number;
     retries?: number;
 }
 interface Config {
@@ -36,12 +38,22 @@ class ZenRows {
 
     readonly clientConfig: ClientConfig;
 
+    readonly queue;
+
     constructor(apiKey: string, clientConfig: ClientConfig = {}) {
         this.apiKey = apiKey;
         this.clientConfig = clientConfig;
+
+        this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);
+
+        this.applyRetries();
     }
 
     public get(url: string, config?: Config, { headers = {} }: { headers?: Headers } = {}): AxiosPromise {
+        return this.queue.push({ url, config, headers });
+    }
+
+    private worker({ url, config, headers }: { url: string; config?: Config; headers: Headers }): AxiosPromise {
         const params = {
             ...config,
             url,
@@ -62,8 +74,6 @@ class ZenRows {
         if (headers && Object.keys(headers).length) {
             params.custom_headers = true;
         }
-
-        this.applyRetries();
 
         return axios(axiosRequestConfig);
     }

@@ -86,6 +86,46 @@ You can also pass optional parameters and headers; the list above is a reference
 
 Sending headers to the target URL will overwrite our defaults. Be careful when doing it and contact us if there is any problem.
 
+### Concurrency
+
+To limit the concurrency, it uses [fastq](https://github.com/mcollina/fastq), which will simultaneously send a maximum of requests. The concurrency is determined by the plan you are in, so take a look at the [pricing](https://www.zenrows.com/pricing) and set it accordingly. Take into account that each client instance will have its own limit, meaning that two different scripts will not share it, and 429 (Too Many Requests) errors might arise.
+
+We use [`Promise.allSettled()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled) in the example below, available from Node 12.9. It will wait for all the promises to finish, and the results are objects with a status marking them as fulfilled or rejected. The main difference with `Promise.all()` is that it won't fail if any requests fail. It might make your scraping more robust since the whole list of URLs will run, even if some of them fail.
+
+```javascript
+const { ZenRows } = require('zenrows');
+
+const apiKey = 'YOUR-API-KEY';
+
+(async () => {
+    const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
+
+    const urls = [
+        'https://www.zenrows.com/',
+        // ...
+    ];
+
+    const promises = urls.map(url => client.get(url));
+
+    const results = await Promise.allSettled(promises);
+    console.log(results);
+    /*
+    [
+        {
+            status: 'fulfilled',
+            value: {
+                status: 200,
+                statusText: 'OK',
+                data: `<!doctype html> <html lang="en"> <head> ...
+            
+        ...
+    */
+
+    // separate results list into rejected and fulfilled for later processing
+    const rejected = results.filter(({ status }) => status === 'rejected');
+    const fulfilled = results.filter(({ status }) => status === 'fulfilled');
+})();
+```
 ## Examples
 
 Take a look at the [examples directory](./examples) for Javascript and TypeScript files using the SDK.
