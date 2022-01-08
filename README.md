@@ -60,7 +60,7 @@ const url = 'https://www.zenrows.com/';
         original_status: false,
     }, {
         headers: {
-            Referrer: 'https://www.google.com',
+            'Referrer': 'https://www.google.com',
             'User-Agent': 'MyCustomUserAgent',
         },
     });
