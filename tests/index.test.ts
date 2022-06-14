@@ -10,6 +10,7 @@ describe('ZenRows Client Get', () => {
     const url = 'https://zenrows.com';
     const client = new ZenRows(apiKey);
     mock.onGet().reply(200);
+    mock.onPost().reply(200);
 
     test('should check response status and add custom user agent', async () => {
         const response = await client.get(url);
@@ -48,5 +49,20 @@ describe('ZenRows Client Get', () => {
 
         expect(response.config.headers['User-Agent']).toBe('test');
         expect(response.config.params.custom_headers).toBe(true);
+    });
+
+    test('should check response status on POST request', async () => {
+        const response = await client.post(url);
+
+        expect(response.status).toBe(200);
+    });
+
+    test('should check data on POST request', async () => {
+        const data = 'key1=value1&key2=value2';
+        const response = await client.post(url, {}, { data });
+
+        expect(response.config.method).toBe('post');
+        expect(response.config.data).toBe(data);
+        expect(response.config.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
     });
 });

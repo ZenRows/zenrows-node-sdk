@@ -86,6 +86,37 @@ You can also pass optional parameters and headers; the list above is a reference
 
 Sending headers to the target URL will overwrite our defaults. Be careful when doing it and contact us if there is any problem.
 
+### POST Requests
+
+The SDK also offers POST requests by calling the `client.post` method. It can receive a new parameter `data` that represents the data sent in, for example, a form. 
+
+```javascript
+const { ZenRows } = require('zenrows', { retries: 1 });
+
+const apiKey = 'YOUR-API-KEY';
+const url = 'https://httpbin.org/anything';
+
+(async () => {
+    const client = new ZenRows(apiKey);
+
+    const { data } = await client.post(url, {
+        // The same params as in GET requests
+    }, {
+        data: new URLSearchParams({
+            'key1': 'value1',
+            'key2': 'value2',
+        }).toString(),
+    });
+
+    console.log(data);
+    /*
+        ...
+        form: { key1: 'value1', key2: 'value2' },
+        ...
+    */
+})();
+```
+
 ### Concurrency
 
 To limit the concurrency, it uses [fastq](https://github.com/mcollina/fastq), which will simultaneously send a maximum of requests. The concurrency is determined by the plan you are in, so take a look at the [pricing](https://www.zenrows.com/pricing) and set it accordingly. Take into account that each client instance will have its own limit, meaning that two different scripts will not share it, and 429 (Too Many Requests) errors might arise.

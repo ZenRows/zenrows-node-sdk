@@ -1,4 +1,5 @@
-import axios, { AxiosPromise, AxiosRequestConfig } from 'axios';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import axios, { AxiosPromise, AxiosRequestConfig, Method } from 'axios';
 import axiosRetry from 'axios-retry';
 import * as fastq from 'fastq';
 
@@ -53,7 +54,11 @@ class ZenRows {
         return this.queue.push({ url, config, headers });
     }
 
-    private worker({ url, config, headers }: { url: string; config?: Config; headers: Headers }): AxiosPromise {
+    public post(url: string, config?: Config, { headers = {}, data = {} }: { headers?: Headers, data?: any } = {}): AxiosPromise {
+        return this.queue.push({ url, method: 'POST', config, headers, data });
+    }
+
+    private worker({ url, method = 'GET', config, headers, data }: { url: string; method?: Method; config?: Config; headers: Headers, data?: any }): AxiosPromise {
         const params = {
             ...config,
             url,
@@ -67,8 +72,10 @@ class ZenRows {
 
         const axiosRequestConfig: AxiosRequestConfig = {
             baseURL: API_URL,
+            method,
             params,
             headers: finalHeaders,
+            data,
         };
 
         if (headers && Object.keys(headers).length) {

@@ -4,6 +4,7 @@ const { ZenRows } = require('zenrows');
 const apiKey = 'YOUR-API-KEY';
 const urlLinks = 'https://www.zenrows.com/';
 const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
+const testPost = 'https://httpbin.org/anything';
 
 (async () => {
     const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
@@ -76,6 +77,27 @@ const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
 
         console.log(rejected);
         console.log(fulfilled);
+    } catch (error) {
+        console.error(error.message);
+        if (error.response) {
+            console.error(error.response.data);
+        }
+    }
+
+    try {
+        const { data } = await client.post(testPost, {}, {
+            data: new URLSearchParams({
+                "key1": "value1",
+                "key2": "value2",
+            }).toString(),
+        });
+
+        console.log(data);
+        /*
+            ...
+            form: { key1: 'value1', key2: 'value2' },
+            ...
+        */
     } catch (error) {
         console.error(error.message);
         if (error.response) {
