@@ -16,13 +16,13 @@ The SDK uses [axios](https://axios-http.com/) for HTTP requests. The client's re
 It also uses [axios-retry](https://github.com/softonic/axios-retry) to automatically retry failed requests (status code 429 and 5XX). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
 
 ```javascript
-const { ZenRows } = require('zenrows', { retries: 1 });
+const { ZenRows } = require('zenrows');
 
 const apiKey = 'YOUR-API-KEY';
 const url = 'https://www.zenrows.com/';
 
 (async () => {
-    const client = new ZenRows(apiKey);
+    const client = new ZenRows(apiKey, { retries: 1 });
 
     const { data } = await client.get(url, {
         // Our algorithm allows to automatically extract content from any website
@@ -91,13 +91,13 @@ Sending headers to the target URL will overwrite our defaults. Be careful when d
 The SDK also offers POST requests by calling the `client.post` method. It can receive a new parameter `data` that represents the data sent in, for example, a form. 
 
 ```javascript
-const { ZenRows } = require('zenrows', { retries: 1 });
+const { ZenRows } = require('zenrows');
 
 const apiKey = 'YOUR-API-KEY';
 const url = 'https://httpbin.org/anything';
 
 (async () => {
-    const client = new ZenRows(apiKey);
+    const client = new ZenRows(apiKey, { retries: 1 });
 
     const { data } = await client.post(url, {
         // The same params as in GET requests
