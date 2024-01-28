@@ -8,6 +8,13 @@ const urlLinks = 'https://www.zenrows.com/';
 const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
 const testPost = 'https://httpbin.org/anything';
 
+function handleError(error: unknown) {
+    console.error((error as Error).message);
+    if (axios.isAxiosError(error)) {
+        console.error(error.response?.data);
+    }
+}
+
 (async () => {
     const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
@@ -22,10 +29,7 @@ const testPost = 'https://httpbin.org/anything';
 
         console.log(data);
     } catch (error: unknown) {
-        console.error((error as Error).message);
-        if (axios.isAxiosError(error)) {
-            console.error(error.response?.data);
-        }
+        handleError(error);
     }
 
     try {
@@ -50,10 +54,7 @@ const testPost = 'https://httpbin.org/anything';
             }
         */
     } catch (error: unknown) {
-        console.error((error as Error).message);
-        if (axios.isAxiosError(error)) {
-            console.error(error.response?.data);
-        }
+        handleError(error);
     }
 
     try {
@@ -73,10 +74,7 @@ const testPost = 'https://httpbin.org/anything';
         console.log(rejected);
         console.log(fulfilled);
     } catch (error: unknown) {
-        console.error((error as Error).message);
-        if (axios.isAxiosError(error)) {
-            console.error(error.response?.data);
-        }
+        handleError(error);
     }
 
     try {
@@ -94,9 +92,6 @@ const testPost = 'https://httpbin.org/anything';
             ...
         */
     } catch (error: unknown) {
-        console.error((error as Error).message);
-        if (axios.isAxiosError(error)) {
-            console.error(error.response?.data);
-        }
+        handleError(error);
     }
 })();
