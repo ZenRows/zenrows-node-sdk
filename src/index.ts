@@ -91,13 +91,7 @@ class ZenRows {
             axiosRetry(axios, {
                 retries,
                 retryDelay: axiosRetry.exponentialDelay,
-                retryCondition: (error) => {
-                    if (error.response?.status === 429) {
-                        return true;
-                    }
-
-                    return axiosRetry.isNetworkOrIdempotentRequestError(error);
-                },
+                retryCondition: (error) => error.response?.status === 429 || axiosRetry.isNetworkOrIdempotentRequestError(error),
             });
         }
     }

@@ -6,6 +6,13 @@ const urlLinks = 'https://www.zenrows.com/';
 const urlPremium = 'https://www.google.com/search?q=Ariana+Grande';
 const testPost = 'https://httpbin.org/anything';
 
+function handleError(error) {
+    console.error(error.message);
+    if (error.response) {
+      console.error(error.response.data);
+    }
+  }
+
 (async () => {
     const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
@@ -27,10 +34,7 @@ const testPost = 'https://httpbin.org/anything';
             ]
         */
     } catch (error) {
-        console.error(error.message);
-        if (error.response) {
-            console.error(error.response.data);
-        }
+        handleError(error)
     }
 
     try {
@@ -55,10 +59,7 @@ const testPost = 'https://httpbin.org/anything';
             }
         */
     } catch (error) {
-        console.error(error.message);
-        if (error.response) {
-            console.error(error.response.data);
-        }
+        handleError(error)
     }
 
     try {
@@ -78,10 +79,7 @@ const testPost = 'https://httpbin.org/anything';
         console.log(rejected);
         console.log(fulfilled);
     } catch (error) {
-        console.error(error.message);
-        if (error.response) {
-            console.error(error.response.data);
-        }
+        handleError(error)
     }
 
     try {
@@ -99,9 +97,6 @@ const testPost = 'https://httpbin.org/anything';
             ...
         */
     } catch (error) {
-        console.error(error.message);
-        if (error.response) {
-            console.error(error.response.data);
-        }
+        handleError(error)
     }
 })();
