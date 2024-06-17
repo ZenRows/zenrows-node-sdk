@@ -1,12 +1,11 @@
+import fastq from "fastq";
 import axios, {
 	type AxiosPromise,
 	type AxiosRequestConfig,
 	type Method,
 } from "axios";
 import axiosRetry from "axios-retry";
-import * as fastq from "fastq";
-
-import { version } from "../package.json" assert { type: "json" };
+import packageJson from "../package.json" assert { type: "json" };
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -89,7 +88,7 @@ class ZenRows {
 		};
 
 		const finalHeaders = {
-			"User-Agent": `zenrows/${version} node`,
+			"User-Agent": `zenrows/${packageJson.version} node`,
 			...headers,
 		};
 
