@@ -1,5 +1,6 @@
 import axios from "axios";
 import MockAdapter from "axios-mock-adapter";
+import { describe, test, expect } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 
 import { ZenRows } from "../src";
 

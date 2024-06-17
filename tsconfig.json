@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    "types": [
+      "node",
+      "vitest/globals"
+    ],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "target": "es2022",
@@ -16,7 +20,6 @@
     "lib": [
       "es2022"
     ],
-    "types": ["vitest/globals"],
     "declaration": true,
   },
   "include": [
