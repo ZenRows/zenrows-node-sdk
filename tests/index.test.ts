@@ -1,55 +1,76 @@
-import axios from "axios";
-import MockAdapter from "axios-mock-adapter";
-import { describe, test, expect } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
-
+import { describe, test, expect, vi, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
-
-const mock = new MockAdapter(axios);
+import packageJson from "../package.json" assert { type: "json" };
 
 describe("ZenRows Client Get", () => {
 	const apiKey = "API_KEY";
-	const url = "https://zenrows.com";
-	const client = new ZenRows(apiKey);
-	mock.onGet().reply(200);
-	mock.onPost().reply(200);
+	const url = "https://example.com";
+	const apiUrl = "https://api.zenrows.com/v1/";
+	let client: ZenRows;
 
-	test("should check response status and add custom user agent", async () => {
-		const response = await client.get(url);
-
-		expect(response.status).toBe(200);
-		expect(response.config.headers["User-Agent"]).toMatch(/zenrows\/(.*) node/);
+	beforeEach(() => {
+		client = new ZenRows(apiKey);
+		vi.mock("node-fetch");
 	});
 
-	test("should set mandatory params api key and url correctly", async () => {
-		const response = await client.get(url);
+	test("should instantiate the ZenRows class correctly", () => {
+		expect(client).toBeInstanceOf(ZenRows);
+		expect(client.apiKey).toBe(apiKey);
+	});
 
-		expect(response.config.params.apikey).toBe(apiKey);
-		expect(response.config.params.url).toBe(url);
+	test("should have custom user agent", async () => {
+		// @ts-ignore (Nestor): TS complains but this works totally fine.
+		fetch.mockReturnValue(
+			Promise.resolve(
+				new Response(JSON.stringify({ data: "mockData" }), {
+					status: 200,
+					headers: { "Content-type": "application/json" },
+				}),
+			),
+		);
+
+		await client.get(url);
+
+		expect(fetch).toHaveBeenCalled();
+		expect(fetch).toHaveBeenCalledWith(
+			`${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}`,
+			{
+				method: "GET",
+				headers: {
+					"User-Agent": `zenrows/${packageJson.version} node`,
+				},
+			},
+		);
 	});
 
 	test("should set optional params correctly", async () => {
-		const customCssExtractor = '{"links": "a @href", "images": "img @src"}';
-		const response = await client.get(url, {
+		const optionalParams = {
 			autoparse: true,
-			css_extractor: customCssExtractor,
+			css_extractor: '{"links": "a @href", "images": "img @src"}',
 			js_render: true,
 			premium_proxy: true,
 			proxy_country: "us",
-		});
+		};
 
-		expect(response.config.params.autoparse).toBe(true);
-		expect(response.config.params.css_extractor).toBe(customCssExtractor);
-		expect(response.config.params.js_render).toBe(true);
-		expect(response.config.params.premium_proxy).toBe(true);
-		expect(response.config.params.proxy_country).toBe("us");
+		await client.get(url, optionalParams);
+
+		const requestUrl = (fetch as Mock).mock.lastCall[0];
+		const parsedUrl = new URL(requestUrl);
+
+		for (const key in optionalParams) {
+			expect(parsedUrl.searchParams.get(key)).toBe(
+				optionalParams[key].toString(),
+			);
+		}
 	});
 
-	test("should overwrite user agent from parameters", async () => {
+	test("should overwrite user agent from headers", async () => {
 		const headers = { "User-Agent": "test" };
-		const response = await client.get(url, {}, { headers });
+		await client.get(url, {}, { headers });
 
-		expect(response.config.headers["User-Agent"]).toBe("test");
-		expect(response.config.params.custom_headers).toBe(true);
+		const lastFetch = (fetch as Mock).mock.lastCall;
+
+		expect(lastFetch[1].headers).toStrictEqual(headers);
 	});
 
 	test("should check response status on POST request", async () => {
@@ -60,11 +81,22 @@ describe("ZenRows Client Get", () => {
 
 	test("should check data on POST request", async () => {
 		const data = "key1=value1&key2=value2";
-		const response = await client.post(url, {}, { data });
+		await client.post(
+			url,
+			{},
+			{
+				headers: { "Content-Type": "application/x-www-form-urlencoded" },
+				data,
+			},
+		);
 
-		expect(response.config.method).toBe("post");
-		expect(response.config.data).toBe(data);
-		expect(response.config.headers["Content-Type"]).toBe(
+		const lastFetch = (fetch as Mock).mock.lastCall;
+
+		expect(lastFetch[1].method).toBe("POST");
+		// Remove trialing and leading quotes
+		const body = lastFetch[1].body.slice(1, -1);
+		expect(body).toBe(data);
+		expect(lastFetch[1].headers["Content-Type"]).toBe(
 			"application/x-www-form-urlencoded",
 		);
 	});
