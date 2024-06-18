@@ -20,7 +20,11 @@
 		"build": "tsup src/index.ts --dts --format cjs,esm --clean",
 		"test": "vitest"
 	},
-	"keywords": ["sdk", "zenrows", "scraping"],
+	"keywords": [
+		"sdk",
+		"zenrows",
+		"scraping"
+	],
 	"author": "ZenRows",
 	"repository": {
 		"type": "git",
@@ -34,13 +38,17 @@
 		"@biomejs/biome": "1.8.1",
 		"@types/node": "^20.14.2",
 		"axios-mock-adapter": "^1.22.0",
+		"msw": "^2.3.1",
 		"tsup": "^8.1.0",
 		"typescript": "^5.4.5",
-		"vitest": "^1.6.0"
+		"vitest": "^1.6.0",
+		"vitest-fetch-mock": "^0.2.2"
 	},
 	"dependencies": {
 		"axios": "^1.7.2",
 		"axios-retry": "^4.4.0",
-		"fastq": "^1.17.1"
+		"fastq": "^1.17.1",
+		"fetch-mock": "^10.0.5",
+		"fetch-retry": "^6.0.0"
 	}
 }

@@ -1,17 +1,23 @@
-import axios from "axios";
-import MockAdapter from "axios-mock-adapter";
-import { describe, test, expect } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { describe, test, expect, beforeEach, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
+
+vi.mock("fetch-retry", () => {
+	return {
+		__esModule: true,
+		default: vi.fn((fetch) => fetch),
+	};
+});
 
 describe("ZenRows Client with Concurrency", () => {
 	const apiKey = "API_KEY";
 	const url = "https://zenrows.com";
-	const client = new ZenRows(apiKey, { concurrency: 2 });
+	let client: ZenRows;
+
+	beforeEach(() => {
+		client = new ZenRows(apiKey, { concurrency: 2 });
+	});
 
 	test("should send and wait for two successful requests", async () => {
-		const mock = new MockAdapter(axios);
-		mock.onGet().reply(200);
-
 		const promises = [client.get(url), client.get(url)];
 
 		const responses = await Promise.all(promises);
