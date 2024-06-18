@@ -1,19 +1,16 @@
 import fastq from "fastq";
-import axios, {
-	type AxiosPromise,
-	type AxiosRequestConfig,
-	type Method,
-} from "axios";
-import axiosRetry from "axios-retry";
+import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" assert { type: "json" };
 
 const API_URL = "https://api.zenrows.com/v1/";
+
+type HttpMethods = "GET" | "OPTIONS" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 interface ClientConfig {
 	concurrency?: number;
 	retries?: number;
 }
-interface Config {
+export interface ZenrowsConfig {
 	autoparse?: boolean;
 	css_extractor?: string;
 	js_render?: boolean;
@@ -34,10 +31,11 @@ interface Headers {
 	[x: string]: string;
 }
 
-class ZenRows {
+export class ZenRows {
 	readonly apiKey: string;
 	readonly clientConfig: ClientConfig;
 	readonly queue;
+	readonly fetchWithRetry;
 
 	constructor(apiKey: string, clientConfig: ClientConfig = {}) {
 		this.apiKey = apiKey;
@@ -49,26 +47,30 @@ class ZenRows {
 			this.clientConfig.concurrency ?? 5,
 		);
 
-		this.applyRetries();
+		this.fetchWithRetry = fetchRetry(fetch, {
+			retries: this.clientConfig.retries ?? 0,
+			retryDelay: (attempt) => 2 ** attempt * 1000,
+			retryOn: [429, 503, 504],
+		});
 	}
 
 	public get(
 		url: string,
-		config?: Config,
+		config?: ZenrowsConfig,
 		{ headers = {} }: { headers?: Headers } = {},
-	): AxiosPromise {
+	): Promise<Response> {
 		return this.queue.push({ url, config, headers });
 	}
 
 	public post(
 		url: string,
-		config?: Config,
+		config?: ZenrowsConfig,
 		{ headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {},
-	): AxiosPromise {
+	): Promise<Response> {
 		return this.queue.push({ url, method: "POST", config, headers, data });
 	}
 
-	private worker({
+	private async worker({
 		url,
 		method = "GET",
 		config,
@@ -76,53 +78,51 @@ class ZenRows {
 		data,
 	}: {
 		url: string;
-		method?: Method;
-		config?: Config;
+		method?: HttpMethods;
+		config?: ZenrowsConfig;
 		headers: Headers;
 		data?: unknown;
-	}): AxiosPromise {
-		const params = {
-			...config,
+	}): Promise<Response> {
+		const params = new URLSearchParams({
 			url,
 			apikey: this.apiKey,
-		};
+		});
+
+		if (config) {
+			for (const [key, value] of Object.entries(config)) {
+				if (value !== undefined) {
+					params.append(key, String(value));
+				}
+			}
+		}
+
+		if (headers && Object.keys(headers).length) {
+			params.append("custom_headers", "true");
+		}
 
 		const finalHeaders = {
 			"User-Agent": `zenrows/${packageJson.version} node`,
 			...headers,
 		};
 
-		const axiosRequestConfig: AxiosRequestConfig = {
-			baseURL: API_URL,
+		const fetchOptions: RequestInit = {
 			method,
-			params,
 			headers: finalHeaders,
-			data,
 		};
 
-		if (headers && Object.keys(headers).length) {
-			params.custom_headers = true;
+		if (method === "POST" && data) {
+			fetchOptions.body = JSON.stringify(data);
 		}
 
-		return axios(axiosRequestConfig);
-	}
+		const response = await this.fetchWithRetry(
+			`${API_URL}?${params.toString()}`,
+			fetchOptions,
+		);
 
-	private applyRetries() {
-		const retries = this.clientConfig.retries ?? 0;
-		if (retries > 0) {
-			axiosRetry(axios, {
-				retries,
-				retryDelay: axiosRetry.exponentialDelay,
-				retryCondition: (error) => {
-					if (error.response?.status === 429) {
-						return true;
-					}
-
-					return axiosRetry.isNetworkOrIdempotentRequestError(error);
-				},
-			});
+		if (!response.ok) {
+			throw new Error(`HTTP error! status: ${response.status}`);
 		}
+
+		return response;
 	}
 }
-
-export { ZenRows };
