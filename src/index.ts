@@ -65,7 +65,9 @@ export class ZenRows {
 	public post(
 		url: string,
 		config?: ZenrowsConfig,
-		{ headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {},
+		{ headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {
+			headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		},
 	): Promise<Response> {
 		return this.queue.push({ url, method: "POST", config, headers, data });
 	}
