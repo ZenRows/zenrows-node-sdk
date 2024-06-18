@@ -1,12 +1,5 @@
-import { describe, test, expect, beforeEach, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { describe, test, expect, beforeEach } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
-
-vi.mock("fetch-retry", () => {
-	return {
-		__esModule: true,
-		default: vi.fn((fetch) => fetch),
-	};
-});
 
 describe("ZenRows Client with Concurrency", () => {
 	const apiKey = "API_KEY";
