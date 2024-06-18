@@ -40,6 +40,7 @@ export class ZenRows {
 	constructor(apiKey: string, clientConfig: ClientConfig = {}) {
 		this.apiKey = apiKey;
 		this.clientConfig = clientConfig;
+		const retries = this.clientConfig.retries ?? 0;
 
 		this.queue = fastq.promise(
 			this,
@@ -48,9 +49,26 @@ export class ZenRows {
 		);
 
 		this.fetchWithRetry = fetchRetry(fetch, {
-			retries: this.clientConfig.retries ?? 0,
 			retryDelay: (attempt) => 2 ** attempt * 1000,
-			retryOn: [429, 503, 504],
+			// retryOn: [422, 503, 504],
+			retryOn: (attempt, error, response) => {
+
+				if (attempt > retries) {
+					return false;
+				}
+
+				if (
+					error !== null ||
+					response?.status === 422 ||
+					response?.status === 503 ||
+					response?.status === 504
+				) {
+					console.log(`Retrying request ${attempt}...`);
+					return true;
+				}
+
+				return false;
+			},
 		});
 	}
 
@@ -120,10 +138,6 @@ export class ZenRows {
 			`${API_URL}?${params.toString()}`,
 			fetchOptions,
 		);
-
-		if (!response.ok) {
-			throw new Error(`HTTP error! status: ${response.status}`);
-		}
 
 		return response;
 	}
