@@ -4,7 +4,7 @@ import packageJson from "../package.json" assert { type: "json" };
 
 const API_URL = "https://api.zenrows.com/v1/";
 
-type HttpMethods = "GET" | "OPTIONS" | "POST" | "PUT" | "PATCH" | "DELETE";
+type HttpMethods = "GET" | "POST" | "PUT";
 
 interface ClientConfig {
 	concurrency?: number;
