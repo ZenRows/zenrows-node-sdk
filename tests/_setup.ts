@@ -1,7 +1,29 @@
-import createFetchMock from "vitest-fetch-mock";
-import { vi } from "vitest";
+import { beforeAll, afterAll, afterEach } from "vitest";
+import { setupServer } from "msw/node";
+import { http, HttpResponse } from "msw";
 
-const fetchMocker = createFetchMock(vi);
+const handlers = [
+	http.get("https://api.zenrows.com/v1/", () => {
+		return HttpResponse.json({
+			firstName: "John",
+			lastName: "Maverick",
+		});
+	}),
+	http.post("https://api.zenrows.com/v1/", () => {
+		return new HttpResponse();
+	}),
+];
 
-// sets globalThis.fetch and globalThis.fetchMock to our mocked version
-fetchMocker.enableMocks();
+export const server = setupServer(...handlers);
+
+beforeAll(() => {
+	server.listen();
+});
+
+afterEach(() => {
+	server.resetHandlers();
+});
+
+afterAll(() => {
+	server.close();
+});

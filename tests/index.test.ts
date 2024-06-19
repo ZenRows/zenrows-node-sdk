@@ -1,6 +1,8 @@
 import { describe, test, expect, vi, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
 import packageJson from "../package.json" assert { type: "json" };
+import { server } from "./_setup";
+import { http } from "msw";
 
 describe("ZenRows Client Get", () => {
 	const apiKey = "API_KEY";
@@ -10,7 +12,6 @@ describe("ZenRows Client Get", () => {
 
 	beforeEach(() => {
 		client = new ZenRows(apiKey);
-		vi.mock("node-fetch");
 	});
 
 	test("should instantiate the ZenRows class correctly", () => {
@@ -19,20 +20,10 @@ describe("ZenRows Client Get", () => {
 	});
 
 	test("should have custom user agent", async () => {
-		// @ts-ignore (Nestor): TS complains but this works totally fine.
-		fetch.mockReturnValue(
-			Promise.resolve(
-				new Response(JSON.stringify({ data: "mockData" }), {
-					status: 200,
-					headers: { "Content-type": "application/json" },
-				}),
-			),
-		);
+		const clientSpy = vi.spyOn(client, "fetchWithRetry");
+		const response = await client.get(url);
 
-		await client.get(url);
-
-		expect(fetch).toHaveBeenCalled();
-		expect(fetch).toHaveBeenCalledWith(
+		expect(clientSpy).toHaveBeenCalledWith(
 			`${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}`,
 			{
 				method: "GET",
@@ -41,6 +32,7 @@ describe("ZenRows Client Get", () => {
 				},
 			},
 		);
+		expect(response.status).toBe(200);
 	});
 
 	test("should set optional params correctly", async () => {
@@ -52,9 +44,9 @@ describe("ZenRows Client Get", () => {
 			proxy_country: "us",
 		};
 
-		await client.get(url, optionalParams);
+		const response = await client.get(url, optionalParams);
 
-		const requestUrl = (fetch as Mock).mock.lastCall[0];
+		const requestUrl = response.url;
 		const parsedUrl = new URL(requestUrl);
 
 		for (const key in optionalParams) {
@@ -65,12 +57,20 @@ describe("ZenRows Client Get", () => {
 	});
 
 	test("should overwrite user agent from headers", async () => {
+		const clientSpy = vi.spyOn(client, "fetchWithRetry");
+
 		const headers = { "User-Agent": "test" };
 		await client.get(url, {}, { headers });
 
-		const lastFetch = (fetch as Mock).mock.lastCall;
-
-		expect(lastFetch[1].headers).toStrictEqual(headers);
+		expect(clientSpy).toHaveBeenCalledWith(
+			`${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}&custom_headers=true`,
+			{
+				method: "GET",
+				headers: {
+					"User-Agent": "test",
+				},
+			},
+		);
 	});
 
 	test("should check response status on POST request", async () => {
@@ -80,8 +80,9 @@ describe("ZenRows Client Get", () => {
 	});
 
 	test("should check data on POST request", async () => {
+		const clientSpy = vi.spyOn(client, "fetchWithRetry");
 		const data = "key1=value1&key2=value2";
-		await client.post(
+		const response = await client.post(
 			url,
 			{},
 			{
@@ -90,14 +91,15 @@ describe("ZenRows Client Get", () => {
 			},
 		);
 
-		const lastFetch = (fetch as Mock).mock.lastCall;
-
-		expect(lastFetch[1].method).toBe("POST");
-		// Remove trialing and leading quotes
-		const body = lastFetch[1].body.slice(1, -1);
-		expect(body).toBe(data);
-		expect(lastFetch[1].headers["Content-Type"]).toBe(
-			"application/x-www-form-urlencoded",
+		expect(clientSpy).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.objectContaining({
+				method: "POST",
+				headers: expect.objectContaining({
+					"Content-Type": "application/x-www-form-urlencoded",
+				}),
+				body: `"${data}"`,
+			}),
 		);
 	});
 });

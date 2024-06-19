@@ -52,7 +52,6 @@ export class ZenRows {
 			retryDelay: (attempt) => 2 ** attempt * 1000,
 			// retryOn: [422, 503, 504],
 			retryOn: (attempt, error, response) => {
-
 				if (attempt > retries) {
 					return false;
 				}
@@ -63,7 +62,6 @@ export class ZenRows {
 					response?.status === 503 ||
 					response?.status === 504
 				) {
-					console.log(`Retrying request ${attempt}...`);
 					return true;
 				}
 
