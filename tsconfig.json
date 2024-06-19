@@ -1,9 +1,6 @@
 {
   "compilerOptions": {
-    "types": [
-      "node",
-      "vitest/globals"
-    ],
+    "types": ["node", "vitest/globals"],
     "esModuleInterop": true,
     "skipLibCheck": true,
     "target": "es2022",
@@ -17,15 +14,9 @@
     "moduleResolution": "NodeNext",
     "module": "NodeNext",
     "outDir": "dist",
-    "lib": [
-      "es2022"
-    ],
-    "declaration": true,
+    "lib": ["es2022"],
+    "declaration": true
   },
-  "include": [
-    "src/*"
-  ],
-  "exclude": [
-    "node_modules"
-  ]
+  "include": ["src/*"],
+  "exclude": ["node_modules"]
 }
