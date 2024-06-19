@@ -25,59 +25,59 @@ const apiKey = "YOUR-API-KEY";
 const url = "https://www.zenrows.com/";
 
 (async () => {
-  const client = new ZenRows(apiKey, { retries: 1 });
+    const client = new ZenRows(apiKey, { retries: 1 });
 
-  const { data } = await client.get(
-    url,
-    {
-      // Our algorithm allows to automatically extract content from any website
-      autoparse: false,
+    const { data } = await client.get(
+        url,
+        {
+            // Our algorithm allows to automatically extract content from any website
+            autoparse: false,
 
-      // CSS Selectors for data extraction (i.e. {"links":"a @href"} to get href attributes from links)
-      css_extractor: "",
+            // CSS Selectors for data extraction (i.e. {"links":"a @href"} to get href attributes from links)
+            css_extractor: "",
 
-      // Enable Javascript with a headless browser (5 credits)
-      js_render: false,
+            // Enable Javascript with a headless browser (5 credits)
+            js_render: false,
 
-      // Use residential proxies (10 credits)
-      premium_proxy: false,
+            // Use residential proxies (10 credits)
+            premium_proxy: false,
 
-      // Make your request from a given country. Requires premium_proxy
-      proxy_country: "",
+            // Make your request from a given country. Requires premium_proxy
+            proxy_country: "",
 
-      // Wait for a given CSS Selector to load in the DOM. Requires js_render
-      wait_for: ".content",
+            // Wait for a given CSS Selector to load in the DOM. Requires js_render
+            wait_for: ".content",
 
-      // Wait a fixed amount of time in milliseconds. Requires js_render
-      wait: 2500,
+            // Wait a fixed amount of time in milliseconds. Requires js_render
+            wait: 2500,
 
-      // Block specific resources from loading, check docs for the full list. Requires js_render
-      block_resources: "image,media,font",
+            // Block specific resources from loading, check docs for the full list. Requires js_render
+            block_resources: "image,media,font",
 
-      // Change the browser's window width and height. Requires js_render
-      window_width: 1920,
-      window_height: 1080,
+            // Change the browser's window width and height. Requires js_render
+            window_width: 1920,
+            window_height: 1080,
 
-      // Will automatically use either desktop or mobile user agents in the headers
-      device: "desktop",
+            // Will automatically use either desktop or mobile user agents in the headers
+            device: "desktop",
 
-      // Will return the status code returned by the website
-      original_status: false,
-    },
-    {
-      headers: {
-        Referrer: "https://www.google.com",
-        "User-Agent": "MyCustomUserAgent",
-      },
-    }
-  );
+            // Will return the status code returned by the website
+            original_status: false,
+        },
+        {
+            headers: {
+                Referrer: "https://www.google.com",
+                "User-Agent": "MyCustomUserAgent",
+            },
+        }
+    );
 
-  console.log(data);
+    console.log(data);
 
-  /* <!doctype html> <html... */
+    /* <!doctype html> <html... */
 
-  // With the CSS selector {"links":"a @href"}
-  /*
+    // With the CSS selector {"links":"a @href"}
+    /*
         {
             links: [
                 'https://www.zenrows.com',
@@ -104,23 +104,23 @@ const apiKey = "YOUR-API-KEY";
 const url = "https://httpbin.org/anything";
 
 (async () => {
-  const client = new ZenRows(apiKey, { retries: 1 });
+    const client = new ZenRows(apiKey, { retries: 1 });
 
-  const { data } = await client.post(
-    url,
-    {
-      // The same params as in GET requests
-    },
-    {
-      data: new URLSearchParams({
-        key1: "value1",
-        key2: "value2",
-      }).toString(),
-    }
-  );
+    const { data } = await client.post(
+        url,
+        {
+            // The same params as in GET requests
+        },
+        {
+            data: new URLSearchParams({
+                key1: "value1",
+                key2: "value2",
+            }).toString(),
+        }
+    );
 
-  console.log(data);
-  /*
+    console.log(data);
+    /*
         ...
         form: { key1: 'value1', key2: 'value2' },
         ...
@@ -140,18 +140,18 @@ const { ZenRows } = require("zenrows");
 const apiKey = "YOUR-API-KEY";
 
 (async () => {
-  const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
+    const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
-  const urls = [
-    "https://www.zenrows.com/",
-    // ...
-  ];
+    const urls = [
+        "https://www.zenrows.com/",
+        // ...
+    ];
 
-  const promises = urls.map((url) => client.get(url));
+    const promises = urls.map((url) => client.get(url));
 
-  const results = await Promise.allSettled(promises);
-  console.log(results);
-  /*
+    const results = await Promise.allSettled(promises);
+    console.log(results);
+    /*
     [
         {
             status: 'fulfilled',
@@ -163,9 +163,9 @@ const apiKey = "YOUR-API-KEY";
         ...
     */
 
-  // separate results list into rejected and fulfilled for later processing
-  const rejected = results.filter(({ status }) => status === "rejected");
-  const fulfilled = results.filter(({ status }) => status === "fulfilled");
+    // separate results list into rejected and fulfilled for later processing
+    const rejected = results.filter(({ status }) => status === "rejected");
+    const fulfilled = results.filter(({ status }) => status === "fulfilled");
 })();
 ```
 
