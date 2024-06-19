@@ -11,23 +11,21 @@ interface ClientConfig {
     concurrency?: number;
     retries?: number;
 }
-interface Config {
-    autoparse?: boolean;
-    /* eslint-disable camelcase */
-    css_extractor?: string;
-    js_render?: boolean;
-    premium_proxy?: boolean;
-    proxy_country?: string;
-    wait_for?: string;
-    wait?: number;
-    block_resources?: string;
-    window_width?: number;
-    window_height?: number;
-    device?: string;
-    original_status?: boolean;
-    custom_headers?: boolean;
-    /* eslint-enable camelcase */
-    [x: string]: unknown;
+export interface ZenRowsConfig {
+	autoparse?: boolean;
+	css_extractor?: string;
+	js_render?: boolean;
+	premium_proxy?: boolean;
+	proxy_country?: string;
+	wait_for?: string;
+	wait?: number;
+	block_resources?: string;
+	window_width?: number;
+	window_height?: number;
+	device?: string;
+	original_status?: boolean;
+	custom_headers?: boolean;
+	[x: string]: unknown;
 }
 
 interface Headers {
@@ -50,15 +48,15 @@ class ZenRows {
         this.applyRetries();
     }
 
-    public get(url: string, config?: Config, { headers = {} }: { headers?: Headers } = {}): AxiosPromise {
+    public get(url: string, config?: ZenRowsConfig, { headers = {} }: { headers?: Headers } = {}): AxiosPromise {
         return this.queue.push({ url, config, headers });
     }
 
-    public post(url: string, config?: Config, { headers = {}, data = {} }: { headers?: Headers, data?: any } = {}): AxiosPromise {
+    public post(url: string, config?: ZenRowsConfig, { headers = {}, data = {} }: { headers?: Headers, data?: any } = {}): AxiosPromise {
         return this.queue.push({ url, method: 'POST', config, headers, data });
     }
 
-    private worker({ url, method = 'GET', config, headers, data }: { url: string; method?: Method; config?: Config; headers: Headers, data?: any }): AxiosPromise {
+    private worker({ url, method = 'GET', config, headers, data }: { url: string; method?: Method; config?: ZenRowsConfig; headers: Headers, data?: any }): AxiosPromise {
         const params = {
             ...config,
             url,
