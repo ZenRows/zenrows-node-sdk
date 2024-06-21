@@ -1,46 +1,46 @@
 {
-	"name": "zenrows",
-	"version": "1.3.2",
-	"description": "ZenRows Node SDK",
-	"main": "./dist/index.cjs",
-	"module": "./dist/index.js",
-	"types": "./dist/index.d.ts",
-	"engines": {
-		"node": ">=20"
-	},
-	"packageManager": "pnpm@9.0.0",
-	"exports": {
-		".": {
-			"require": "./dist/index.cjs",
-			"import": "./dist/index.js",
-			"types": "./dist/index.d.ts"
-		}
-	},
-	"scripts": {
-		"build": "tsup src/index.ts --dts --format cjs,esm --clean",
-		"test": "vitest"
-	},
-	"keywords": ["sdk", "zenrows", "scraping"],
-	"author": "ZenRows",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/ZenRows/zenrows-node-sdk.git"
-	},
-	"homepage": "https://github.com/ZenRows/zenrows-node-sdk#readme",
-	"url": "https://github.com/ZenRows/zenrows-node-sdk/issues",
-	"type": "module",
-	"license": "MIT",
-	"devDependencies": {
-		"@biomejs/biome": "1.8.1",
-		"@types/async-retry": "^1.4.8",
-		"@types/node": "^20.14.2",
-		"msw": "^2.3.1",
-		"tsup": "^8.1.0",
-		"typescript": "^5.4.5",
-		"vitest": "^1.6.0"
-	},
-	"dependencies": {
-		"fastq": "^1.17.1",
-		"fetch-retry": "^6.0.0"
-	}
+  "name": "zenrows",
+  "version": "1.3.2",
+  "description": "ZenRows Node SDK",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "exports": {
+    ".": {
+      "require": "./dist/index.cjs",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format cjs,esm --clean",
+    "test": "vitest"
+  },
+  "keywords": ["sdk", "zenrows", "scraping"],
+  "author": "ZenRows",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZenRows/zenrows-node-sdk.git"
+  },
+  "homepage": "https://github.com/ZenRows/zenrows-node-sdk#readme",
+  "url": "https://github.com/ZenRows/zenrows-node-sdk/issues",
+  "type": "module",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "1.8.1",
+    "@types/async-retry": "^1.4.8",
+    "@types/node": "^20.14.2",
+    "msw": "^2.3.1",
+    "tsup": "^8.1.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "dependencies": {
+    "fastq": "^1.17.1",
+    "fetch-retry": "^6.0.0"
+  }
 }
