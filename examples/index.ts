@@ -4,7 +4,7 @@ import axios from "axios";
 import { ZenRows } from "zenrows";
 
 const apiKey = "YOUR-API-KEY";
-const urlLinks = "https://www.zenrows.com/";
+const urlLinks = "https://www.scrapingcourse.com/";
 const urlPremium = "https://www.google.com/search?q=Ariana+Grande";
 const testPost = "https://httpbin.org/anything";
 
@@ -58,7 +58,6 @@ const testPost = "https://httpbin.org/anything";
 
   try {
     const urls = [
-      "https://api.ipify.org",
       "https://httpbin.org/ip",
       "https://httpbin.org/anything",
       "https://ident.me",
