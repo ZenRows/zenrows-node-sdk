@@ -10,7 +10,7 @@ interface ClientConfig {
   concurrency?: number;
   retries?: number;
 }
-export interface ZenrowsConfig {
+export interface ZenRowsConfig {
   autoparse?: boolean;
   css_extractor?: string;
   js_render?: boolean;
@@ -72,7 +72,7 @@ export class ZenRows {
 
   public get(
     url: string,
-    config?: ZenrowsConfig,
+    config?: ZenRowsConfig,
     { headers = {} }: { headers?: Headers } = {},
   ): Promise<Response> {
     return this.queue.push({ url, config, headers });
@@ -80,7 +80,7 @@ export class ZenRows {
 
   public post(
     url: string,
-    config?: ZenrowsConfig,
+    config?: ZenRowsConfig,
     { headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     },
@@ -106,7 +106,7 @@ export class ZenRows {
   }: {
     url: string;
     method?: HttpMethods;
-    config?: ZenrowsConfig;
+    config?: ZenRowsConfig;
     headers: Headers;
     data?: unknown;
   }): Promise<Response> {
