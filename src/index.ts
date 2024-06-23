@@ -85,7 +85,6 @@ export class ZenRows {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     },
   ): Promise<Response> {
-    return this.queue.push({ url, method: "POST", config, headers, data });
     return this.queue.push({
       url,
       method: "POST",
@@ -139,7 +138,11 @@ export class ZenRows {
     };
 
     if (method === "POST" && data) {
-      fetchOptions.body = JSON.stringify(data);
+      if (typeof data === "object") {
+        fetchOptions.body = JSON.stringify(data);
+      } else {
+        fetchOptions.body = String(data);
+      }
     }
 
     const response = await this.fetchWithRetry(
