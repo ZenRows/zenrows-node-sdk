@@ -4,19 +4,22 @@ SDK to access [ZenRows](https://www.zenrows.com/) API directly from Node.js. Zen
 
 ## Installation
 
-Install the SDK with npm.
+Install the SDK with your package manager of choice.
 
 ```bash
 npm install zenrows
+yarn add zenrows
+pnpm install zenrows
+bun install zenrows
 ```
 
 ## Usage
 
 Start using the API by [creating your API Key](https://app.zenrows.com/register?p=free).
 
-The SDK uses [axios](https://axios-http.com/) for HTTP requests. The client's response will be an `AxiosPromise` if using TypeScript, a regular `Promise` otherwise.
+The SDK uses the official [fetch api](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html) for HTTP requests. The client's response will be a [`Response`](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html#response).
 
-It also uses [axios-retry](https://github.com/softonic/axios-retry) to automatically retry failed requests (status code 429 and 5XX). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
+It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to automatically retry failed requests (status code 429 and 5XX). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -27,7 +30,7 @@ const url = "https://www.zenrows.com/";
 (async () => {
   const client = new ZenRows(apiKey, { retries: 1 });
 
-  const { data } = await client.get(
+  const response = await client.get(
     url,
     {
       // Our algorithm allows to automatically extract content from any website
@@ -72,6 +75,9 @@ const url = "https://www.zenrows.com/";
     }
   );
 
+  // You can also use response.json() if you're expecting JSON data.
+  const data = await response.text();
+
   console.log(data);
 
   /* <!doctype html> <html... */
@@ -106,7 +112,7 @@ const url = "https://httpbin.org/anything";
 (async () => {
   const client = new ZenRows(apiKey, { retries: 1 });
 
-  const { data } = await client.post(
+  const response = await client.post(
     url,
     {
       // The same params as in GET requests
@@ -118,6 +124,8 @@ const url = "https://httpbin.org/anything";
       }).toString(),
     }
   );
+
+  const data = await response.json();
 
   console.log(data);
   /*
@@ -169,6 +177,23 @@ const apiKey = "YOUR-API-KEY";
 })();
 ```
 
+#### An important note about Promise.allSettled() on TypeScript
+
+`Promise.allSettled()` does not narrow the type of the array elements in the callback function. This means that you will need to cast the type of the array elements to `PromiseSettledResult<Response>` to access the `status` and `value` properties.
+
+```typescript
+const promises = urls.map((url) => client.get(url));
+
+const results = await Promise.allSettled(promises);
+
+const fulfilled = results
+  .filter(
+    (item): item is PromiseFulfilledResult<Response> =>
+      item.status === "fulfilled"
+  )
+  .map((item) => item.value.json());
+```
+
 ## Examples
 
 Take a look at the [examples directory](./examples) for Javascript and TypeScript files using the SDK.
@@ -179,7 +204,7 @@ Each file makes two requests, the first with CSS selectors and the second with C
 cd examples
 npm install
 node index.js # JS example
-npx ts-node index.ts # TS example
+npx tsx index.ts # TS example
 ```
 
 ## Contributing
