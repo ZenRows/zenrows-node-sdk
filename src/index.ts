@@ -86,6 +86,16 @@ export class ZenRows {
     },
   ): Promise<Response> {
     return this.queue.push({ url, method: "POST", config, headers, data });
+    return this.queue.push({
+      url,
+      method: "POST",
+      config,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...headers,
+      },
+      data,
+    });
   }
 
   private async worker({
