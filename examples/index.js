@@ -10,13 +10,13 @@ const testPost = "https://httpbin.org/anything";
   const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
   try {
-    const { data } = await client.get(urlLinks, {
-      // autoparse: true,
+    const response = await client.get(urlLinks, {
       css_extractor: '{"links": "a @href"}',
-      // js_render: true,
-      // premium_proxy: true,
-      // proxy_country: 'us',
+      js_render: true,
+      premium_proxy: true,
     });
+
+    const data = await response.json();
 
     console.log(data.links);
     /*
@@ -34,7 +34,7 @@ const testPost = "https://httpbin.org/anything";
   }
 
   try {
-    const { data } = await client.get(urlPremium, {
+    const response = await client.get(urlPremium, {
       // autoparse: true,
       css_extractor:
         '{"aproximate_results": "#result-stats", "headers": "#search a > h3"}',
@@ -42,6 +42,8 @@ const testPost = "https://httpbin.org/anything";
       premium_proxy: true,
       proxy_country: "us",
     });
+
+    const data = await response.json();
 
     console.log(data);
     /*
@@ -64,6 +66,7 @@ const testPost = "https://httpbin.org/anything";
 
   try {
     const urls = [
+      "https://api.ipify.org",
       "https://httpbin.org/ip",
       "https://httpbin.org/anything",
       "https://ident.me",
@@ -85,7 +88,7 @@ const testPost = "https://httpbin.org/anything";
   }
 
   try {
-    const { data } = await client.post(
+    const response = await client.post(
       testPost,
       {},
       {
@@ -95,6 +98,8 @@ const testPost = "https://httpbin.org/anything";
         }).toString(),
       },
     );
+
+    const data = await response.json();
 
     console.log(data);
     /*

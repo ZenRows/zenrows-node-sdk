@@ -1,5 +1,4 @@
 /* eslint-disable no-console */
-import axios from "axios";
 
 import { ZenRows } from "zenrows";
 
@@ -12,30 +11,31 @@ const testPost = "https://httpbin.org/anything";
   const client = new ZenRows(apiKey, { concurrency: 5, retries: 1 });
 
   try {
-    const { data } = await client.get(urlLinks, {
+    const response = await client.get(urlLinks, {
       // autoparse: true,
+      js_render: true,
+      premium_proxy: true,
       css_extractor: '{"links": "a @href"}',
-      // js_render: true,
-      // premium_proxy: true,
       // proxy_country: 'us',
     });
 
+    const data = await response.json();
+
     console.log(data);
-  } catch (error: unknown) {
+  } catch (error) {
     console.error((error as Error).message);
-    if (axios.isAxiosError(error)) {
-      console.error(error.response?.data);
-    }
   }
 
   try {
-    const { data } = await client.get(urlPremium, {
+    const response = await client.get(urlPremium, {
       // autoparse: true,
       css_extractor: '{"stats": "#result-stats", "headers": "#search a > h3"}',
       // js_render: true,
       premium_proxy: true,
       proxy_country: "us",
     });
+
+    const data = await response.json();
 
     console.log(data);
     /*
@@ -49,11 +49,8 @@ const testPost = "https://httpbin.org/anything";
                 stats: 'About 10,700,000 results (0.48 seconds)'
             }
         */
-  } catch (error: unknown) {
+  } catch (error) {
     console.error((error as Error).message);
-    if (axios.isAxiosError(error)) {
-      console.error(error.response?.data);
-    }
   }
 
   try {
@@ -66,20 +63,22 @@ const testPost = "https://httpbin.org/anything";
     const promises = urls.map((url) => client.get(url));
 
     const results = await Promise.allSettled(promises);
-    const rejected = results.filter(({ status }) => status === "rejected");
-    const fulfilled = results.filter(({ status }) => status === "fulfilled");
+    const rejected = results.filter(
+      (item): item is PromiseRejectedResult => item.status === "rejected",
+    );
+    const fulfilled = results.filter(
+      (item): item is PromiseFulfilledResult<Response> =>
+        item.status === "fulfilled",
+    );
 
     console.log(rejected);
     console.log(fulfilled);
-  } catch (error: unknown) {
+  } catch (error) {
     console.error((error as Error).message);
-    if (axios.isAxiosError(error)) {
-      console.error(error.response?.data);
-    }
   }
 
   try {
-    const { data } = await client.post(
+    const response = await client.post(
       testPost,
       {},
       {
@@ -90,16 +89,15 @@ const testPost = "https://httpbin.org/anything";
       },
     );
 
+    const data = await response.json();
+
     console.log(data);
     /*
             ...
             form: { key1: 'value1', key2: 'value2' },
             ...
         */
-  } catch (error: unknown) {
+  } catch (error) {
     console.error((error as Error).message);
-    if (axios.isAxiosError(error)) {
-      console.error(error.response?.data);
-    }
   }
 })();
