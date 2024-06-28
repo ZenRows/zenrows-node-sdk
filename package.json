@@ -1,6 +1,6 @@
 {
   "name": "zenrows",
-  "version": "1.3.2",
+  "version": "2.0.0",
   "description": "ZenRows Node SDK",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
