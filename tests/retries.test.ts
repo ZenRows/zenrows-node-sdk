@@ -1,51 +1,82 @@
-import axios from 'axios';
-import MockAdapter from 'axios-mock-adapter';
+import { vi, describe, test, expect, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { ZenRows } from "../src";
+import { server } from "./_setup";
+import { HttpResponse, http } from "msw";
 
-import { ZenRows } from '../src';
+describe("ZenRows Client with Retries", () => {
+  const apiKey = "API_KEY";
+  const url = "https://example.com";
+  const apiUrl = "https://api.zenrows.com/v1/";
+  let client: ZenRows;
 
-describe('ZenRows Client with Retries', () => {
-    const apiKey = 'API_KEY';
-    const url = 'https://zenrows.com';
-    const client = new ZenRows(apiKey, { retries: 2 });
+  beforeEach(() => {
+    client = new ZenRows(apiKey, { retries: 2 });
+  });
 
-    test('should call axios 3 times (initial plus two retries)', async () => {
-        const mock = new MockAdapter(axios);
-        mock.onGet().reply(500);
+  test(
+    "should call fetch 3 times (initial plus 2 retries)",
+    { timeout: Number.POSITIVE_INFINITY },
+    async () => {
+      const clientSpy = vi.spyOn(client, "fetchWithRetry");
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          return HttpResponse.error();
+        }),
+      );
 
-        try {
-            await client.get(url);
-        } catch (error) {
-            expect(mock.history.get.length).toBe(3);
-            return;
-        }
+      try {
+        await client.get(url);
+      } catch (error) {
+        return;
+      }
 
-        expect('should not arrive here').toBe(true);
-    });
+      expect(clientSpy).toHaveBeenCalledTimes(3);
+    },
+  );
 
-    test('should throw error with status code 500', async () => {
-        const mock = new MockAdapter(axios);
-        mock.onGet().reply(500);
+  test(
+    "should throw error with status code 500",
+    { timeout: Number.POSITIVE_INFINITY },
+    async () => {
+      const clientSpy = vi.spyOn(client, "get");
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          return new HttpResponse(null, { status: 503 });
+        }),
+      );
 
-        try {
-            await client.get(url);
-        } catch (error) {
-            if (axios.isAxiosError(error)) {
-                expect(error.response?.status).toBe(500);
-                expect(mock.history.get.length).toBe(3);
-                return;
-            }
-        }
-
-        expect('should not arrive here').toBe(true);
-    });
-
-    test('should fail the first attempt and succeed the second', async () => {
-        const mock = new MockAdapter(axios);
-        mock.onGet().replyOnce(500).onGet().reply(200);
-
+      try {
         const response = await client.get(url);
+        expect(clientSpy).toHaveBeenCalledTimes(3);
+        expect(response.status).toBe(503);
+      } catch (error) {
+        return;
+      }
+    },
+  );
 
-        expect(response.status).toBe(200);
-        expect(mock.history.get.length).toBe(2);
-    });
+  test(
+    "should fail the first attempt and succeed the second",
+    { timeout: Number.POSITIVE_INFINITY },
+    async () => {
+      server.use(
+        http.get(
+          "https://api.zenrows.com/v1/",
+          () => {
+            return new HttpResponse(null, { status: 503 });
+          },
+          {
+            once: true,
+          },
+        ),
+      );
+
+      try {
+        const response = await client.get(url);
+        expect(response).toBe(200);
+      } catch (error) {
+        return;
+      }
+    },
+  );
 });

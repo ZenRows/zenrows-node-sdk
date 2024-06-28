@@ -1,68 +1,105 @@
-import axios from 'axios';
-import MockAdapter from 'axios-mock-adapter';
+import { describe, test, expect, vi, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { ZenRows } from "../src";
+import packageJson from "../package.json" assert { type: "json" };
+import { server } from "./_setup";
+import { http } from "msw";
 
-import { ZenRows } from '../src';
+describe("ZenRows Client Get", () => {
+  const apiKey = "API_KEY";
+  const url = "https://example.com";
+  const apiUrl = "https://api.zenrows.com/v1/";
+  let client: ZenRows;
 
-const mock = new MockAdapter(axios);
+  beforeEach(() => {
+    client = new ZenRows(apiKey);
+  });
 
-describe('ZenRows Client Get', () => {
-    const apiKey = 'API_KEY';
-    const url = 'https://zenrows.com';
-    const client = new ZenRows(apiKey);
-    mock.onGet().reply(200);
-    mock.onPost().reply(200);
+  test("should instantiate the ZenRows class correctly", () => {
+    expect(client).toBeInstanceOf(ZenRows);
+    expect(client.apiKey).toBe(apiKey);
+  });
 
-    test('should check response status and add custom user agent', async () => {
-        const response = await client.get(url);
+  test("should have custom user agent", async () => {
+    const clientSpy = vi.spyOn(client, "fetchWithRetry");
+    const response = await client.get(url);
 
-        expect(response.status).toBe(200);
-        expect(response.config.headers['User-Agent']).toMatch(/zenrows\/(.*) node/);
-    });
+    expect(clientSpy).toHaveBeenCalledWith(
+      `${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}`,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": `zenrows/${packageJson.version} node`,
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+  });
 
-    test('should set mandatory params api key and url correctly', async () => {
-        const response = await client.get(url);
+  test("should set optional params correctly", async () => {
+    const optionalParams = {
+      autoparse: true,
+      css_extractor: '{"links": "a @href", "images": "img @src"}',
+      js_render: true,
+      premium_proxy: true,
+      proxy_country: "us",
+    };
 
-        expect(response.config.params.apikey).toBe(apiKey);
-        expect(response.config.params.url).toBe(url);
-    });
+    const response = await client.get(url, optionalParams);
 
-    test('should set optional params correctly', async () => {
-        const customCssExtractor = '{"links": "a @href", "images": "img @src"}';
-        const response = await client.get(url, {
-            autoparse: true,
-            css_extractor: customCssExtractor,
-            js_render: true,
-            premium_proxy: true,
-            proxy_country: 'us',
-        });
+    const requestUrl = response.url;
+    const parsedUrl = new URL(requestUrl);
 
-        expect(response.config.params.autoparse).toBe(true);
-        expect(response.config.params.css_extractor).toBe(customCssExtractor);
-        expect(response.config.params.js_render).toBe(true);
-        expect(response.config.params.premium_proxy).toBe(true);
-        expect(response.config.params.proxy_country).toBe('us');
-    });
+    for (const key in optionalParams) {
+      expect(parsedUrl.searchParams.get(key)).toBe(
+        optionalParams[key].toString(),
+      );
+    }
+  });
 
-    test('should overwrite user agent from parameters', async () => {
-        const headers = { 'User-Agent': 'test' };
-        const response = await client.get(url, {}, { headers });
+  test("should overwrite user agent from headers", async () => {
+    const clientSpy = vi.spyOn(client, "fetchWithRetry");
 
-        expect(response.config.headers['User-Agent']).toBe('test');
-        expect(response.config.params.custom_headers).toBe(true);
-    });
+    const headers = { "User-Agent": "test" };
+    await client.get(url, {}, { headers });
 
-    test('should check response status on POST request', async () => {
-        const response = await client.post(url);
+    expect(clientSpy).toHaveBeenCalledWith(
+      `${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}&custom_headers=true`,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "test",
+        },
+      },
+    );
+  });
 
-        expect(response.status).toBe(200);
-    });
+  test("should check response status on POST request", async () => {
+    const response = await client.post(url);
 
-    test('should check data on POST request', async () => {
-        const data = 'key1=value1&key2=value2';
-        const response = await client.post(url, {}, { data });
+    expect(response.status).toBe(200);
+  });
 
-        expect(response.config.method).toBe('post');
-        expect(response.config.data).toBe(data);
-        expect(response.config.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
-    });
+  test("should check data on POST request", async () => {
+    const clientSpy = vi.spyOn(client, "fetchWithRetry");
+    const data = "key1=value1&key2=value2";
+    const response = await client.post(
+      url,
+      {},
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        data,
+      },
+    );
+
+    expect(clientSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/x-www-form-urlencoded",
+        }),
+        body: `"${data}"`,
+      }),
+    );
+  });
 });

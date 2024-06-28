@@ -9,3 +9,4 @@ tsconfig.json
 .eslintignore
 .eslintrc.js
 .prettierrc.json
+biome.json

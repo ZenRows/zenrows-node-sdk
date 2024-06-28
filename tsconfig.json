@@ -1,18 +1,22 @@
 {
   "compilerOptions": {
-    "target": "ES2015",
-    "module": "commonjs",
-    "strict": true,
+    "types": ["node", "vitest/globals"],
+    "esModuleInterop": true,
     "skipLibCheck": true,
+    "target": "es2022",
+    "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
-    "declaration": true,
+    "allowJs": true,
     "resolveJsonModule": true,
-    "outDir": "./dist"
+    "moduleDetection": "force",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "moduleResolution": "NodeNext",
+    "module": "NodeNext",
+    "outDir": "dist",
+    "lib": ["es2022"],
+    "declaration": true
   },
-  "include": [
-      "src/*"
-  ],
-  "exclude": [
-      "node_modules"
-  ]
+  "include": ["src/*"],
+  "exclude": ["node_modules"]
 }
