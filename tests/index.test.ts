@@ -1,12 +1,20 @@
-import { describe, test, expect, vi, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import {
+  describe,
+  test,
+  expect,
+  vi,
+  beforeEach,
+  type Mock,
+  expectTypeOf,
+} from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
 import packageJson from "../package.json" assert { type: "json" };
 import { server } from "./_setup";
-import { http } from "msw";
 
 describe("ZenRows Client Get", () => {
   const apiKey = "API_KEY";
   const url = "https://example.com";
+  const realURL = new URL(url);
   const apiUrl = "https://api.zenrows.com/v1/";
   let client: ZenRows;
 
@@ -17,6 +25,24 @@ describe("ZenRows Client Get", () => {
   test("should instantiate the ZenRows class correctly", () => {
     expect(client).toBeInstanceOf(ZenRows);
     expect(client.apiKey).toBe(apiKey);
+    expectTypeOf(client.clientConfig).toEqualTypeOf<{
+      concurrency?: number;
+      retries?: number;
+    }>();
+  });
+
+  test("should have custom user agent", async () => {
+    const response = await client.get(realURL);
+  });
+
+  test("should accept both URL and string as the first parameter in get method", () => {
+    const client = new ZenRows("test_api_key");
+    const urlString = "https://example.com";
+    const urlObject = new URL(urlString);
+
+    // Ensure it accepts both string and URL
+    expectTypeOf(() => client.get(urlString)).toBeFunction();
+    expectTypeOf(() => client.get(urlObject)).toBeFunction();
   });
 
   test("should have custom user agent", async () => {
@@ -30,7 +56,7 @@ describe("ZenRows Client Get", () => {
         headers: {
           "User-Agent": `zenrows/${packageJson.version} node`,
         },
-      },
+      }
     );
     expect(response.status).toBe(200);
   });
@@ -51,7 +77,7 @@ describe("ZenRows Client Get", () => {
 
     for (const key in optionalParams) {
       expect(parsedUrl.searchParams.get(key)).toBe(
-        optionalParams[key].toString(),
+        optionalParams[key].toString()
       );
     }
   });
@@ -63,13 +89,15 @@ describe("ZenRows Client Get", () => {
     await client.get(url, {}, { headers });
 
     expect(clientSpy).toHaveBeenCalledWith(
-      `${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}&custom_headers=true`,
+      `${apiUrl}?url=${encodeURIComponent(
+        url
+      )}&apikey=${apiKey}&custom_headers=true`,
       {
         method: "GET",
         headers: {
           "User-Agent": "test",
         },
-      },
+      }
     );
   });
 
@@ -88,7 +116,7 @@ describe("ZenRows Client Get", () => {
       {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         data,
-      },
+      }
     );
 
     expect(clientSpy).toHaveBeenCalledWith(
@@ -99,7 +127,7 @@ describe("ZenRows Client Get", () => {
           "Content-Type": "application/x-www-form-urlencoded",
         }),
         body: `"${data}"`,
-      }),
+      })
     );
   });
 });
