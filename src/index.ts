@@ -50,7 +50,6 @@ export class ZenRows {
 
     this.fetchWithRetry = fetchRetry(fetch, {
       retryDelay: (attempt) => 2 ** attempt * 1000,
-      // retryOn: [422, 503, 504],
       retryOn: (attempt, error, response) => {
         if (attempt > retries) {
           return false;
@@ -71,22 +70,26 @@ export class ZenRows {
   }
 
   public get(
-    url: string,
+    url: URL | string,
     config?: ZenRowsConfig,
     { headers = {} }: { headers?: Headers } = {},
   ): Promise<Response> {
-    return this.queue.push({ url, config, headers });
+    const standarizedUrl = typeof url === "string" ? new URL(url) : url;
+
+    return this.queue.push({ url: standarizedUrl, config, headers });
   }
 
   public post(
-    url: string,
+    url: URL | string,
     config?: ZenRowsConfig,
     { headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     },
   ): Promise<Response> {
+    const standarizedUrl = typeof url === "string" ? new URL(url) : url;
+
     return this.queue.push({
-      url,
+      url: standarizedUrl,
       method: "POST",
       config,
       headers: {
@@ -104,14 +107,14 @@ export class ZenRows {
     headers,
     data,
   }: {
-    url: string;
+    url: URL;
     method?: HttpMethods;
     config?: ZenRowsConfig;
     headers: Headers;
     data?: unknown;
   }): Promise<Response> {
     const params = new URLSearchParams({
-      url,
+      url: url.toString(),
       apikey: this.apiKey,
     });
 
