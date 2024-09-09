@@ -85,13 +85,28 @@ export class ZenRows {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     },
   ): Promise<Response> {
+    const normalizedHeaders = Object.keys(headers).reduce(
+      (acc: { [key: string]: string }, key: string) => {
+        const value = headers[key];
+        if (value !== undefined) {
+          if (key.toLowerCase() === "content-type") {
+            acc["Content-Type"] = value;
+          } else {
+            acc[key] = value;
+          }
+        }
+        return acc;
+      },
+      {},
+    );
+
     return this.queue.push({
       url,
       method: "POST",
       config,
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        ...headers,
+        ...normalizedHeaders,
       },
       data,
     });
