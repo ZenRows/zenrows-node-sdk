@@ -1,6 +1,6 @@
 {
   "name": "zenrows-examples",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "ZenRows Node SDK Examples",
   "main": "index.js",
   "private": true,
@@ -9,6 +9,6 @@
   },
   "author": "ZenRows",
   "dependencies": {
-    "zenrows": "^2.0.0"
+    "zenrows": "^2.0.1"
   }
 }
