@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { beforeEach, describe, expect, test } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
 
 describe("ZenRows Client with Concurrency", () => {

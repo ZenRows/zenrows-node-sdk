@@ -1,7 +1,7 @@
-import { vi, describe, test, expect, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import { http, HttpResponse } from "msw";
+import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import { ZenRows } from "../src";
 import { server } from "./_setup";
-import { HttpResponse, http } from "msw";
 
 describe("ZenRows Client with Retries", () => {
   const apiKey = "API_KEY";

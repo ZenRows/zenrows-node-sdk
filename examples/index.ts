@@ -54,11 +54,7 @@ const testPost = "https://httpbin.org/anything";
   }
 
   try {
-    const urls = [
-      "https://httpbin.org/ip",
-      "https://httpbin.org/anything",
-      "https://ident.me",
-    ];
+    const urls = ["https://httpbin.org/ip", "https://httpbin.org/anything", "https://ident.me"];
 
     const promises = urls.map((url) => client.get(url));
 
@@ -67,8 +63,7 @@ const testPost = "https://httpbin.org/anything";
       (item): item is PromiseRejectedResult => item.status === "rejected",
     );
     const fulfilled = results.filter(
-      (item): item is PromiseFulfilledResult<Response> =>
-        item.status === "fulfilled",
+      (item): item is PromiseFulfilledResult<Response> => item.status === "fulfilled",
     );
 
     console.log(rejected);
