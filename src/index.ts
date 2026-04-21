@@ -42,17 +42,13 @@ export class ZenRows {
     this.clientConfig = clientConfig;
     const retries = this.clientConfig.retries ?? 0;
 
-    this.queue = fastq.promise(
-      this,
-      this.worker,
-      this.clientConfig.concurrency ?? 5,
-    );
+    this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);
 
     this.fetchWithRetry = fetchRetry(fetch, {
       retryDelay: (attempt) => 2 ** attempt * 1000,
       // retryOn: [422, 503, 504],
       retryOn: (attempt, error, response) => {
-        if (attempt > retries) {
+        if (attempt >= retries) {
           return false;
         }
 
@@ -73,7 +69,7 @@ export class ZenRows {
   public get(
     url: string,
     config?: ZenRowsConfig,
-    { headers = {} }: { headers?: Headers } = {},
+    { headers = {} }: { headers?: Headers } = {}
   ): Promise<Response> {
     return this.queue.push({ url, config, headers });
   }
@@ -83,7 +79,7 @@ export class ZenRows {
     config?: ZenRowsConfig,
     { headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    },
+    }
   ): Promise<Response> {
     const normalizedHeaders = Object.keys(headers).reduce(
       (acc: { [key: string]: string }, key: string) => {
@@ -97,7 +93,7 @@ export class ZenRows {
         }
         return acc;
       },
-      {},
+      {}
     );
 
     return this.queue.push({
@@ -160,10 +156,7 @@ export class ZenRows {
       }
     }
 
-    const response = await this.fetchWithRetry(
-      `${API_URL}?${params.toString()}`,
-      fetchOptions,
-    );
+    const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, fetchOptions);
 
     return response;
   }
