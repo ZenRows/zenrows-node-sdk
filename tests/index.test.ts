@@ -1,6 +1,6 @@
 import { http } from "msw";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
-import packageJson from "../package.json" assert { type: "json" };
+import packageJson from "../package.json" with { type: "json" };
 import { ZenRows } from "../src";
 import { server } from "./_setup";
 
