@@ -1,6 +1,6 @@
 import fastq from "fastq";
 import fetchRetry from "fetch-retry";
-import packageJson from "../package.json" assert { type: "json" };
+import packageJson from "../package.json" with { type: "json" };
 
 const API_URL = "https://api.zenrows.com/v1/";
 
