@@ -69,7 +69,7 @@ export class ZenRows {
   public get(
     url: string,
     config?: ZenRowsConfig,
-    { headers = {} }: { headers?: Headers } = {}
+    { headers = {} }: { headers?: Headers } = {},
   ): Promise<Response> {
     return this.queue.push({ url, config, headers });
   }
@@ -79,7 +79,7 @@ export class ZenRows {
     config?: ZenRowsConfig,
     { headers = {}, data = {} }: { headers?: Headers; data?: unknown } = {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    }
+    },
   ): Promise<Response> {
     const normalizedHeaders = Object.keys(headers).reduce(
       (acc: { [key: string]: string }, key: string) => {
@@ -93,7 +93,7 @@ export class ZenRows {
         }
         return acc;
       },
-      {}
+      {},
     );
 
     return this.queue.push({

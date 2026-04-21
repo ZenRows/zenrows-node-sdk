@@ -1,8 +1,8 @@
-import { describe, test, expect, vi, beforeEach, type Mock } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
-import { ZenRows } from "../src";
-import packageJson from "../package.json" assert { type: "json" };
-import { server } from "./_setup";
 import { http } from "msw";
+import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
+import packageJson from "../package.json" assert { type: "json" };
+import { ZenRows } from "../src";
+import { server } from "./_setup";
 
 describe("ZenRows Client Get", () => {
   const apiKey = "API_KEY";
@@ -50,9 +50,7 @@ describe("ZenRows Client Get", () => {
     const parsedUrl = new URL(requestUrl);
 
     for (const key in optionalParams) {
-      expect(parsedUrl.searchParams.get(key)).toBe(
-        optionalParams[key].toString(),
-      );
+      expect(parsedUrl.searchParams.get(key)).toBe(optionalParams[key].toString());
     }
   });
 
@@ -98,7 +96,7 @@ describe("ZenRows Client Get", () => {
         headers: expect.objectContaining({
           "Content-Type": "application/x-www-form-urlencoded",
         }),
-        body: `"${data}"`,
+        body: data,
       }),
     );
   });

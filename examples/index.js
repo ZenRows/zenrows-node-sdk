@@ -36,8 +36,7 @@ const testPost = "https://httpbin.org/anything";
   try {
     const response = await client.get(urlPremium, {
       // autoparse: true,
-      css_extractor:
-        '{"aproximate_results": "#result-stats", "headers": "#search a > h3"}',
+      css_extractor: '{"aproximate_results": "#result-stats", "headers": "#search a > h3"}',
       // js_render: true,
       premium_proxy: true,
       proxy_country: "us",
