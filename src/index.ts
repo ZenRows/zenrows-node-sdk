@@ -2,6 +2,10 @@ import fastq from "fastq";
 import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
 
+// Batch (async-job) API — the ZenRowsBatchClient and its surface.
+// Also importable directly from "zenrows/batch".
+export * from "./batch/index.js";
+
 const API_URL = "https://api.zenrows.com/v1/";
 
 type HttpMethods = "GET" | "POST" | "PUT";

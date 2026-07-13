@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noEmit": true,
+    "paths": {
+      "zenrows/batch": ["../../src/batch/index.ts"],
+      "zenrows": ["../../src/index.ts"]
+    }
+  },
+  "include": ["./*.ts"]
+}

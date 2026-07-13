@@ -1,0 +1,12 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/batch/index.ts"],
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "docs/reference",
+  "readme": "none",
+  "githubPages": false,
+  "excludeInternal": true,
+  "hideGenerator": true,
+  "name": "ZenRows Batch — Node SDK Reference",
+  "sort": ["source-order"]
+}

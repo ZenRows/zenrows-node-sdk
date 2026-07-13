@@ -2,8 +2,12 @@ node_modules
 examples
 src
 tests
+docs/reference
 jest.config.js
 tsconfig.json
+tsup.config.ts
+vitest.config.ts
+typedoc.json
 .vscode
 .idea
 .eslintignore
