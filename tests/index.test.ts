@@ -71,6 +71,28 @@ describe("ZenRows Client Get", () => {
     );
   });
 
+  test("fetch() is the primary method; get() is a deprecated alias for it", async () => {
+    const response = await client.fetch(url);
+    expect(response.status).toBe(200);
+
+    const viaGet = await client.get(url);
+    expect(viaGet.status).toBe(200);
+  });
+
+  test("extract() sets the extract param, defaulting to auto", async () => {
+    const response = await client.extract(url);
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("extract")).toBe("auto");
+  });
+
+  test("extract() accepts an explicit mode", async () => {
+    const response = await client.extract(url, { extract: "native" });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("extract")).toBe("native");
+  });
+
   test("should check response status on POST request", async () => {
     const response = await client.post(url);
 
@@ -97,6 +119,24 @@ describe("ZenRows Client Get", () => {
           "Content-Type": "application/x-www-form-urlencoded",
         }),
         body: data,
+      }),
+    );
+  });
+
+  test("preserves a non-Content-Type custom header on POST alongside the default Content-Type", async () => {
+    // normalizedHeaders' fallback branch (any header key other than content-type) was never
+    // exercised before — every existing POST test only overrode Content-Type itself.
+    const clientSpy = vi.spyOn(client, "fetchWithRetry");
+
+    await client.post(url, {}, { headers: { "X-Custom-Header": "custom-value" } });
+
+    expect(clientSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Custom-Header": "custom-value",
+        }),
       }),
     );
   });

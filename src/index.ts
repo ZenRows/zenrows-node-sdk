@@ -1,10 +1,16 @@
 import fastq from "fastq";
 import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
+import { ZenRowsBatchClient } from "./batch.js";
+
+export * from "./batch.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
 type HttpMethods = "GET" | "POST" | "PUT";
+
+/** Extract mode — see https://docs.zenrows.com for what each mode returns. */
+export type ExtractMode = "auto" | "native" | "standard";
 
 interface ClientConfig {
   concurrency?: number;
@@ -36,10 +42,13 @@ export class ZenRows {
   readonly clientConfig: ClientConfig;
   readonly queue;
   readonly fetchWithRetry;
+  /** Client for the Batch API (async job/run/task model) — see `./batch.ts`. */
+  readonly batch: ZenRowsBatchClient;
 
   constructor(apiKey: string, clientConfig: ClientConfig = {}) {
     this.apiKey = apiKey;
     this.clientConfig = clientConfig;
+    this.batch = new ZenRowsBatchClient(apiKey);
     const retries = this.clientConfig.retries ?? 0;
 
     this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);
@@ -66,12 +75,40 @@ export class ZenRows {
     });
   }
 
-  public get(
+  /**
+   * Fetch a URL through ZenRows — the main page-scraping product. This is the primary entry
+   * point; `get()` remains as a deprecated alias for existing callers.
+   */
+  public fetch(
     url: string,
     config?: ZenRowsConfig,
     { headers = {} }: { headers?: Headers } = {},
   ): Promise<Response> {
     return this.queue.push({ url, config, headers });
+  }
+
+  /** @deprecated Use `fetch()` instead. Kept for backward compatibility. */
+  public get(
+    url: string,
+    config?: ZenRowsConfig,
+    opts: { headers?: Headers } = {},
+  ): Promise<Response> {
+    return this.fetch(url, config, opts);
+  }
+
+  /**
+   * Fetch a URL and run it through Extract — ZenRows' AI-powered structured extraction
+   * (private beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
+   * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
+   * `extract` param set — no separate endpoint or auth.
+   */
+  public extract(
+    url: string,
+    config?: ZenRowsConfig & { extract?: ExtractMode },
+    opts: { headers?: Headers } = {},
+  ): Promise<Response> {
+    const { extract = "auto", ...rest } = config ?? {};
+    return this.fetch(url, { ...rest, extract }, opts);
   }
 
   public post(
