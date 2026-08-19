@@ -114,6 +114,258 @@ const handlers = [
       { status: 422 },
     );
   }),
+
+  // ----- schedule -----
+  http.put("https://async.api.zenrows.com/v1/jobs/job_sched/schedule", () => {
+    return HttpResponse.json({ job_id: "job_sched", status: "closed", type: "scheduled" });
+  }),
+  http.post("https://async.api.zenrows.com/v1/jobs/job_sched/schedule/state", () => {
+    return HttpResponse.json({ job_id: "job_sched", status: "closed", schedule_state: "paused" });
+  }),
+  http.post("https://async.api.zenrows.com/v1/jobs/job_123/pause", () => {
+    return HttpResponse.json({ run_id: "run_1", job_id: "job_123", pause_state: "paused" });
+  }),
+  http.post("https://async.api.zenrows.com/v1/jobs/job_123/resume", () => {
+    return HttpResponse.json({ run_id: "run_1", job_id: "job_123", pause_state: "active" });
+  }),
+
+  // ----- webhooks -----
+  http.get("https://async.api.zenrows.com/v1/jobs/job_123/webhook", () => {
+    return HttpResponse.json({ url: "https://example.com/hook", signature: true });
+  }),
+  http.put("https://async.api.zenrows.com/v1/jobs/job_123/webhook", () => {
+    return HttpResponse.json({ url: "https://example.com/hook2", signature: false });
+  }),
+  http.delete("https://async.api.zenrows.com/v1/jobs/job_123/webhook", () => {
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post("https://async.api.zenrows.com/v1/webhook/test", () => {
+    return HttpResponse.json({
+      delivered: true,
+      event_id: "evt_1",
+      status_code: 200,
+      elapsed_ms: 42,
+    });
+  }),
+
+  // ----- HMAC key lifecycle -----
+  http.get("https://async.api.zenrows.com/v1/hmac/keys", () => {
+    return HttpResponse.json({
+      active: { kid: "01AAAAAAAAAAAAAAAAAAAAAAAA", created_at: "2026-01-01T00:00:00Z" },
+    });
+  }),
+  http.post("https://async.api.zenrows.com/v1/hmac/keys/rotate", () => {
+    return HttpResponse.json({
+      kid: "01BBBBBBBBBBBBBBBBBBBBBBBB",
+      secret: "c2VjcmV0",
+      created_at: "2026-01-02T00:00:00Z",
+    });
+  }),
+  http.delete("https://async.api.zenrows.com/v1/hmac/keys/rotate", () => {
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.post("https://async.api.zenrows.com/v1/hmac/keys/rotate/finalize", () => {
+    return HttpResponse.json({
+      active_kid: "01BBBBBBBBBBBBBBBBBBBBBBBB",
+      created_at: "2026-01-02T00:00:00Z",
+    });
+  }),
+
+  // ----- CSV upload (job_inputs) -----
+  http.post("https://async.api.zenrows.com/v1/job_inputs", () => {
+    return HttpResponse.json({
+      file_input_id: "file_123",
+      upload: {
+        method: "PUT",
+        url: "https://storage.example.test/presigned-upload",
+        headers: { "Content-Type": "text/csv" },
+        expires_at: "2026-01-01T01:00:00Z",
+      },
+      expires_at: "2026-01-02T00:00:00Z",
+    });
+  }),
+  http.put("https://storage.example.test/presigned-upload", () => {
+    return new HttpResponse(null, { status: 200 });
+  }),
+
+  // ----- results export -----
+  http.post("https://async.api.zenrows.com/v1/jobs/job_123/runs/run_1/exports", () => {
+    return HttpResponse.json(
+      {
+        export_id: "01EXPORTAAAAAAAAAAAAAAAAAA",
+        status: "pending",
+        created_at: "2026-01-01T00:00:00Z",
+        expires_at: "2026-01-01T12:00:00Z",
+      },
+      { status: 201 },
+    );
+  }),
+  http.get(
+    "https://async.api.zenrows.com/v1/jobs/job_123/runs/run_1/exports/01EXPORTAAAAAAAAAAAAAAAAAA",
+    () => {
+      return HttpResponse.json({
+        export_id: "01EXPORTAAAAAAAAAAAAAAAAAA",
+        status: "completed",
+        download_url: "https://storage.example.test/export.zip",
+        created_at: "2026-01-01T00:00:00Z",
+        expires_at: "2026-01-01T12:00:00Z",
+      });
+    },
+  ),
+  http.get("https://storage.example.test/export.zip", () => {
+    return new HttpResponse(new Blob([new Uint8Array([1, 2, 3, 4])]), { status: 200 });
+  }),
+
+  // ----- task history -----
+  http.get("https://async.api.zenrows.com/v1/jobs/job_123/tasks/task_1/history", () => {
+    return HttpResponse.json({
+      events: [
+        { started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:00:01Z", attempt: 1 },
+      ],
+    });
+  }),
+
+  // ----- retry: fails twice with 503, succeeds on the 3rd attempt -----
+  http.get(
+    "https://async.api.zenrows.com/v1/jobs/job_retry_then_ok",
+    (() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        if (calls < 3) {
+          return HttpResponse.json(
+            { type: "about:blank", title: "Service Unavailable", status: 503 },
+            { status: 503 },
+          );
+        }
+        return HttpResponse.json({ job_id: "job_retry_then_ok", status: "open" });
+      };
+    })(),
+  ),
+  // ----- retry: honors Retry-After -----
+  http.get(
+    "https://async.api.zenrows.com/v1/jobs/job_retry_after",
+    (() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.json(
+            { type: "about:blank", title: "Too Many Requests", status: 429 },
+            { status: 429, headers: { "Retry-After": "0" } },
+          );
+        }
+        return HttpResponse.json({ job_id: "job_retry_after", status: "open" });
+      };
+    })(),
+  ),
+  // ----- download: a job whose results carry real presigned result_urls -----
+  http.get("https://async.api.zenrows.com/v1/jobs/job_download/results", () => {
+    return HttpResponse.json({
+      results: [
+        {
+          task_id: "task_a",
+          external_id: "ext_a",
+          run_id: "run_dl",
+          url: "https://example.com/a",
+          status: "successful",
+          result_url: "https://storage.example.test/body-a",
+        },
+        {
+          task_id: "task_b",
+          run_id: "run_dl",
+          url: "https://example.com/b",
+          status: "successful",
+          result_url: "https://storage.example.test/body-b",
+        },
+      ],
+      next_cursor: null,
+    });
+  }),
+  http.get("https://async.api.zenrows.com/v1/jobs/job_download/runs/run_dl/results", () => {
+    return HttpResponse.json({
+      results: [
+        {
+          task_id: "task_a",
+          external_id: "ext_a",
+          run_id: "run_dl",
+          url: "https://example.com/a",
+          status: "successful",
+          result_url: "https://storage.example.test/body-a",
+        },
+        {
+          task_id: "task_b",
+          run_id: "run_dl",
+          url: "https://example.com/b",
+          status: "successful",
+          result_url: "https://storage.example.test/body-b",
+        },
+      ],
+      next_cursor: null,
+    });
+  }),
+  http.get(
+    "https://storage.example.test/body-a",
+    () => new HttpResponse("body A", { status: 200 }),
+  ),
+  http.get(
+    "https://storage.example.test/body-b",
+    () => new HttpResponse("body B", { status: 200 }),
+  ),
+
+  // ----- job whose ingest is pending on the 1st poll, done on the 2nd -----
+  http.get(
+    "https://async.api.zenrows.com/v1/jobs/job_ingest_pending",
+    (() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        return HttpResponse.json({
+          job_id: "job_ingest_pending",
+          status: "open",
+          latest_run: {
+            run_id: "run_ip",
+            job_id: "job_ingest_pending",
+            status: "running",
+            ingest_status: calls < 2 ? "pending" : "done",
+          },
+        });
+      };
+    })(),
+  ),
+  http.get("https://async.api.zenrows.com/v1/jobs/job_no_run", () => {
+    return HttpResponse.json({ job_id: "job_no_run", status: "closed" });
+  }),
+
+  // ----- retry: a network-level failure (not an HTTP status) on a GET, then success -----
+  http.get(
+    "https://async.api.zenrows.com/v1/jobs/job_network_blip",
+    (() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        if (calls === 1) {
+          return HttpResponse.error();
+        }
+        return HttpResponse.json({ job_id: "job_network_blip", status: "open" });
+      };
+    })(),
+  ),
+
+  // ----- retry: POST without an Idempotency-Key is never retried on 503 -----
+  http.post(
+    "https://async.api.zenrows.com/v1/jobs/job_no_retry_post/tasks",
+    (() => {
+      let calls = 0;
+      return () => {
+        calls += 1;
+        return HttpResponse.json(
+          { type: "about:blank", title: "Service Unavailable", status: 503 },
+          { status: 503 },
+        );
+      };
+    })(),
+  ),
 ];
 
 export const server = setupServer(...handlers);

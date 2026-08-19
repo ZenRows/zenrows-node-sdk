@@ -1,9 +1,15 @@
 import fastq from "fastq";
 import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
-import { ZenRowsBatchClient } from "./batch.js";
+import { ZenRowsBatchClient } from "./batch/client.js";
 
-export * from "./batch.js";
+export * from "./batch/client.js";
+export * from "./batch/errors.js";
+export * from "./batch/estimate.js";
+export * from "./batch/schedule.js";
+export * from "./batch/waiters.js";
+export * from "./batch/download.js";
+export type * from "./batch/types.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -76,7 +82,7 @@ export class ZenRows {
   }
 
   /**
-   * Fetch a URL through ZenRows — the main page-scraping product. This is the primary entry
+   * Fetch a URL through Zenrows — the main page-scraping product. This is the primary entry
    * point; `get()` remains as a deprecated alias for existing callers.
    */
   public fetch(
@@ -97,7 +103,7 @@ export class ZenRows {
   }
 
   /**
-   * Fetch a URL and run it through Extract — ZenRows' AI-powered structured extraction
+   * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction
    * (private beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
    * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
    * `extract` param set — no separate endpoint or auth.
