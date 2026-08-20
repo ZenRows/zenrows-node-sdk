@@ -120,6 +120,11 @@ export class ZenRows {
    * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
    * `extract` param set — no separate endpoint or auth.
    *
+   * Also sends Adaptive Stealth Mode (`mode: "auto"`) by default, so a target that needs
+   * `js_render`/`premium_proxy` gets escalated automatically instead of failing with
+   * REQS002 — pass `adaptiveStealth: false` to disable that and set `js_render`/
+   * `premium_proxy` yourself.
+   *
    * `extract=auto` is a domain-gated open beta: when the target domain isn't enabled yet,
    * the API returns a 402 with `code: "AUTH010"`. By default this method catches that and
    * retries once with `autoparse: true` instead of returning the error response — pass
@@ -127,11 +132,21 @@ export class ZenRows {
    */
   public async extract(
     url: string,
-    config?: ZenRowsConfig & { extract?: ExtractMode; fallbackToAutoparse?: boolean },
+    config?: ZenRowsConfig & {
+      extract?: ExtractMode;
+      fallbackToAutoparse?: boolean;
+      adaptiveStealth?: boolean;
+    },
     opts: { headers?: Headers } = {},
   ): Promise<Response> {
-    const { extract = "auto", fallbackToAutoparse = true, ...rest } = config ?? {};
-    const response = await this.fetch(url, { ...rest, extract }, opts);
+    const {
+      extract = "auto",
+      fallbackToAutoparse = true,
+      adaptiveStealth = true,
+      ...rest
+    } = config ?? {};
+    const mode = adaptiveStealth ? "auto" : undefined;
+    const response = await this.fetch(url, { ...rest, extract, mode }, opts);
 
     if (
       response.status === 402 &&
@@ -139,7 +154,7 @@ export class ZenRows {
       fallbackToAutoparse &&
       (await isAuth010(response))
     ) {
-      return this.fetch(url, { ...rest, autoparse: true }, opts);
+      return this.fetch(url, { ...rest, autoparse: true, mode }, opts);
     }
 
     return response;

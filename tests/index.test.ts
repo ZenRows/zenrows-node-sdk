@@ -86,6 +86,20 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.get("extract")).toBe("auto");
   });
 
+  test("extract() sends Adaptive Stealth Mode by default", async () => {
+    const response = await client.extract(url);
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("mode")).toBe("auto");
+  });
+
+  test("extract() omits mode when adaptiveStealth is disabled", async () => {
+    const response = await client.extract(url, { adaptiveStealth: false });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.has("mode")).toBe(false);
+  });
+
   test("extract() accepts an explicit mode", async () => {
     const response = await client.extract(url, { extract: "native" });
 
@@ -117,6 +131,7 @@ describe("ZenRows Client Get", () => {
       expect(attempt).toBe(2);
       expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
       expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
+      expect(secondCallUrl?.searchParams.get("mode")).toBe("auto");
     });
 
     test("does not retry when fallbackToAutoparse is false", async () => {
