@@ -18,6 +18,18 @@ type HttpMethods = "GET" | "POST" | "PUT";
 /** Extract mode — see https://docs.zenrows.com for what each mode returns. */
 export type ExtractMode = "auto" | "native" | "standard";
 
+/** True when a response's JSON error envelope carries the Extract
+ * domain-not-enabled code (AUTH010). Reads via `.clone()` so the original
+ * response body is left unconsumed for the caller. */
+async function isAuth010(response: Response): Promise<boolean> {
+  try {
+    const body = (await response.clone().json()) as { code?: unknown };
+    return typeof body?.code === "string" && body.code.toUpperCase() === "AUTH010";
+  } catch {
+    return false;
+  }
+}
+
 interface ClientConfig {
   concurrency?: number;
   retries?: number;
@@ -104,17 +116,33 @@ export class ZenRows {
 
   /**
    * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction
-   * (private beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
+   * (beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
    * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
    * `extract` param set — no separate endpoint or auth.
+   *
+   * `extract=auto` is a domain-gated open beta: when the target domain isn't enabled yet,
+   * the API returns a 402 with `code: "AUTH010"`. By default this method catches that and
+   * retries once with `autoparse: true` instead of returning the error response — pass
+   * `fallbackToAutoparse: false` to disable that and get the raw AUTH010 response back.
    */
-  public extract(
+  public async extract(
     url: string,
-    config?: ZenRowsConfig & { extract?: ExtractMode },
+    config?: ZenRowsConfig & { extract?: ExtractMode; fallbackToAutoparse?: boolean },
     opts: { headers?: Headers } = {},
   ): Promise<Response> {
-    const { extract = "auto", ...rest } = config ?? {};
-    return this.fetch(url, { ...rest, extract }, opts);
+    const { extract = "auto", fallbackToAutoparse = true, ...rest } = config ?? {};
+    const response = await this.fetch(url, { ...rest, extract }, opts);
+
+    if (
+      response.status === 402 &&
+      extract === "auto" &&
+      fallbackToAutoparse &&
+      (await isAuth010(response))
+    ) {
+      return this.fetch(url, { ...rest, autoparse: true }, opts);
+    }
+
+    return response;
   }
 
   public post(

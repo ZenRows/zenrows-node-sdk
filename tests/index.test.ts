@@ -1,4 +1,4 @@
-import { http } from "msw";
+import { http, HttpResponse } from "msw";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRows } from "../src";
@@ -91,6 +91,81 @@ describe("ZenRows Client Get", () => {
 
     const parsedUrl = new URL(response.url);
     expect(parsedUrl.searchParams.get("extract")).toBe("native");
+  });
+
+  describe("extract() AUTH010 fallback", () => {
+    test("retries once with autoparse when the domain isn't Extract-enabled", async () => {
+      let secondCallUrl: URL | undefined;
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", ({ request }) => {
+          attempt += 1;
+          if (attempt === 1) {
+            return HttpResponse.json(
+              { code: "AUTH010", title: "Domain not enabled" },
+              { status: 402 },
+            );
+          }
+          secondCallUrl = new URL(request.url);
+          return HttpResponse.json([{ found: "via autoparse" }]);
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(200);
+      expect(attempt).toBe(2);
+      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
+      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
+    });
+
+    test("does not retry when fallbackToAutoparse is false", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
+        }),
+      );
+
+      const response = await client.extract(url, { fallbackToAutoparse: false });
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
+
+    test("does not retry for a 402 that isn't AUTH010 (e.g. out of credits)", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json(
+            { code: "AUTH004", title: "No credit available" },
+            { status: 402 },
+          );
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
+
+    test("does not retry for non-auto modes", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
+        }),
+      );
+
+      const response = await client.extract(url, { extract: "native" });
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
   });
 
   test("should check response status on POST request", async () => {
