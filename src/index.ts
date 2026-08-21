@@ -35,7 +35,7 @@ interface ClientConfig {
   retries?: number;
 }
 export interface ZenRowsConfig {
-  /** Set to "auto" to enable Adaptive Stealth Mode — ZenRows starts with the cheapest
+  /** Set to "auto" to enable Adaptive Stealth Mode — Zenrows starts with the cheapest
    * viable request configuration and escalates to js_render/premium_proxy only when the
    * target needs it, billing only for the configuration that succeeds. */
   mode?: "auto";
