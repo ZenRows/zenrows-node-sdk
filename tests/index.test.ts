@@ -1,4 +1,4 @@
-import { http } from "msw";
+import { http, HttpResponse } from "msw";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRows } from "../src";
@@ -71,6 +71,118 @@ describe("ZenRows Client Get", () => {
     );
   });
 
+  test("fetch() is the primary method; get() is a deprecated alias for it", async () => {
+    const response = await client.fetch(url);
+    expect(response.status).toBe(200);
+
+    const viaGet = await client.get(url);
+    expect(viaGet.status).toBe(200);
+  });
+
+  test("extract() sets the extract param, defaulting to auto", async () => {
+    const response = await client.extract(url);
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("extract")).toBe("auto");
+  });
+
+  test("extract() sends Adaptive Stealth Mode by default", async () => {
+    const response = await client.extract(url);
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("mode")).toBe("auto");
+  });
+
+  test("extract() omits mode when adaptiveStealth is disabled", async () => {
+    const response = await client.extract(url, { adaptiveStealth: false });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.has("mode")).toBe(false);
+  });
+
+  test("extract() accepts an explicit mode", async () => {
+    const response = await client.extract(url, { extract: "native" });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("extract")).toBe("native");
+  });
+
+  describe("extract() AUTH010 fallback", () => {
+    test("retries once with autoparse when the domain isn't Extract-enabled", async () => {
+      let secondCallUrl: URL | undefined;
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", ({ request }) => {
+          attempt += 1;
+          if (attempt === 1) {
+            return HttpResponse.json(
+              { code: "AUTH010", title: "Domain not enabled" },
+              { status: 402 },
+            );
+          }
+          secondCallUrl = new URL(request.url);
+          return HttpResponse.json([{ found: "via autoparse" }]);
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(200);
+      expect(attempt).toBe(2);
+      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
+      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
+      expect(secondCallUrl?.searchParams.get("mode")).toBe("auto");
+    });
+
+    test("does not retry when fallbackToAutoparse is false", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
+        }),
+      );
+
+      const response = await client.extract(url, { fallbackToAutoparse: false });
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
+
+    test("does not retry for a 402 that isn't AUTH010 (e.g. out of credits)", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json(
+            { code: "AUTH004", title: "No credit available" },
+            { status: 402 },
+          );
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
+
+    test("does not retry for non-auto modes", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
+        }),
+      );
+
+      const response = await client.extract(url, { extract: "native" });
+
+      expect(response.status).toBe(402);
+      expect(attempt).toBe(1);
+    });
+  });
+
   test("should check response status on POST request", async () => {
     const response = await client.post(url);
 
@@ -97,6 +209,24 @@ describe("ZenRows Client Get", () => {
           "Content-Type": "application/x-www-form-urlencoded",
         }),
         body: data,
+      }),
+    );
+  });
+
+  test("preserves a non-Content-Type custom header on POST alongside the default Content-Type", async () => {
+    // normalizedHeaders' fallback branch (any header key other than content-type) was never
+    // exercised before — every existing POST test only overrode Content-Type itself.
+    const clientSpy = vi.spyOn(client, "fetchWithRetry");
+
+    await client.post(url, {}, { headers: { "X-Custom-Header": "custom-value" } });
+
+    expect(clientSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Custom-Header": "custom-value",
+        }),
       }),
     );
   });
