@@ -211,6 +211,25 @@ const apiKey = "YOUR-API-KEY";
 
 `client.batch` also exposes `listJobs()`, `deleteJob()`, `stopRun()`, `rerun()`, `listRuns()`, `getRun()`, `deleteRun()`, and `getTaskContent()` (returns the scraped page's raw content as a string, not JSON — the endpoint can return HTML or plain text depending on what the target page served). Scheduling, webhook config, HMAC key rotation, CSV task uploads, and results exports aren't wrapped yet — call the [Batch API](https://docs.zenrows.com) directly for those.
 
+#### Extract in a batch
+
+Set `extract` in the batch params to run tasks through Extract — structured data instead of raw HTML. It works job-wide or per task, and per-task values win on collision.
+
+```js
+const job = await client.batch.submitRegular(
+  [
+    // Inherits the job-level params below.
+    { url: "https://example.com/products", external_id: "p1" },
+    // Overrides them for this task only.
+    { url: "https://example.com/raw", zenrows_params: {} },
+  ],
+  undefined,
+  { zenrowsParams: { extract: "auto" } },
+);
+```
+
+An Extract task's result carries two keys — `html` (the raw page) and `parsed` (the structured data). It costs the same as a regular task, so `estimateCost` prices it correctly. `extract_fields` is not supported in Batch yet.
+
 The batch client (`ZenRowsBatchClient`) also works standalone, without a `ZenRows` instance — matching the Go and Python SDKs' batch clients:
 
 ```javascript
