@@ -116,12 +116,21 @@ export interface WaitForRunOptions {
   maxPollInterval?: number;
 }
 
-type TaskInput = string | { url: string; external_id?: string; metadata?: Record<string, unknown> };
+type TaskInput =
+  | string
+  | {
+      url: string;
+      external_id?: string;
+      metadata?: Record<string, unknown>;
+      /** Per-task scrape params, merged over the job-level `zenrowsParams` (task wins). */
+      zenrows_params?: Record<string, unknown>;
+    };
 
 function coerceUrl(item: TaskInput): {
   url: string;
   external_id?: string;
   metadata?: Record<string, unknown>;
+  zenrows_params?: Record<string, unknown>;
 } {
   return typeof item === "string" ? { url: item } : item;
 }
