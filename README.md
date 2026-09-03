@@ -9,6 +9,21 @@
 
 SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zenrows handles proxies rotation, headless browsers, and CAPTCHAs for you.
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Adaptive Stealth Mode](#adaptive-stealth-mode)
+  - [POST Requests](#post-requests)
+  - [Extract](#extract)
+  - [Batch](#batch)
+    - [Extract in a batch](#extract-in-a-batch)
+  - [Concurrency](#concurrency)
+    - [An important note about Promise.allSettled() on TypeScript](#an-important-note-about-promiseallsettled-on-typescript)
+- [Examples](#examples)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Installation
 
 Install the SDK with your package manager of choice.
