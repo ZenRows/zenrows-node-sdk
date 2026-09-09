@@ -1,6 +1,6 @@
 {
   "name": "zenrows",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "ZenRows Node SDK",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -22,7 +22,11 @@
     "format": "biome format --write .",
     "check": "biome check ."
   },
-  "keywords": ["sdk", "zenrows", "scraping"],
+  "keywords": [
+    "sdk",
+    "zenrows",
+    "scraping"
+  ],
   "author": "ZenRows",
   "repository": {
     "type": "git",
