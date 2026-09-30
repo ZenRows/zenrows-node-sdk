@@ -22,11 +22,7 @@
     "format": "biome format --write .",
     "check": "biome check ."
   },
-  "keywords": [
-    "sdk",
-    "zenrows",
-    "scraping"
-  ],
+  "keywords": ["sdk", "zenrows", "scraping"],
   "author": "ZenRows",
   "repository": {
     "type": "git",
