@@ -17,6 +17,7 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
   - [POST Requests](#post-requests)
   - [Extract](#extract)
   - [Batch](#batch)
+    - [Extensible values](#extensible-values)
     - [Extract in a batch](#extract-in-a-batch)
   - [Concurrency](#concurrency)
     - [An important note about Promise.allSettled() on TypeScript](#an-important-note-about-promiseallsettled-on-typescript)
@@ -225,6 +226,10 @@ const apiKey = "YOUR-API-KEY";
 ```
 
 `client.batch` also exposes `listJobs()`, `deleteJob()`, `stopRun()`, `rerun()`, `listRuns()`, `getRun()`, `deleteRun()`, and `getTaskContent()` (returns the scraped page's raw content as a string, not JSON — the endpoint can return HTML or plain text depending on what the target page served). Scheduling, webhook config, HMAC key rotation, CSV task uploads, and results exports aren't wrapped yet — call the [Batch API](https://docs.zenrows.com) directly for those.
+
+#### Extensible values
+
+Enum-valued fields on responses (run, job, task and export `status`, `ingest_status`, `failure_reason`) are typed `Extensible<...>`: the known values plus any `string`, because the server may add values. The exported named types (`RunStatus`, `JobStatus`, `TaskStatus`, `ExportStatus`, `IngestStatus`) stay closed, so they still work as request input. Give switches on these fields a default branch; an exhaustive `switch` that assigns the leftover to `never` no longer compiles.
 
 #### Extract in a batch
 

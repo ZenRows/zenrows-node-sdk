@@ -50,7 +50,9 @@ describe("ZenRows Client Get", () => {
     const parsedUrl = new URL(requestUrl);
 
     for (const key in optionalParams) {
-      expect(parsedUrl.searchParams.get(key)).toBe(optionalParams[key].toString());
+      expect(parsedUrl.searchParams.get(key)).toBe(
+        optionalParams[key as keyof typeof optionalParams].toString(),
+      );
     }
   });
 

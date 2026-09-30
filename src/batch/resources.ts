@@ -8,6 +8,7 @@ import type { Schedule } from "./schedule.js";
 import type {
   Export,
   ExportStatus,
+  Extensible,
   Job,
   JobStatus,
   Run,
@@ -127,7 +128,7 @@ export class RunHandle extends RunRef {
     super(client, jobId, runId);
   }
 
-  get status(): RunStatus {
+  get status(): Extensible<RunStatus> {
     return this.data.status;
   }
 
@@ -210,7 +211,7 @@ export class ExportHandle extends ExportRef {
     super(client, jobId, runId, exportId, startResponse);
   }
 
-  get status(): ExportStatus {
+  get status(): Extensible<ExportStatus> {
     return this.data.status;
   }
 }
@@ -394,7 +395,7 @@ export class JobRef {
   }
 
   /** The job status from the submit response — only known on refs from a `submit*` call. */
-  get status(): JobStatus | undefined {
+  get status(): Extensible<JobStatus> | undefined {
     return this.submitResponse?.status;
   }
 
@@ -434,7 +435,7 @@ export class JobRef {
     options: { lastBatch?: boolean } = {},
   ): Promise<{
     accepted_tasks: number;
-    job_status: JobStatus;
+    job_status: Extensible<JobStatus>;
     latest_run: Run;
   }> {
     return this.#client._postTasks(this.jobId, tasks, options);
@@ -491,7 +492,7 @@ export class JobHandle extends JobRef {
     super(client, jobId, submitResponse);
   }
 
-  get status(): JobStatus {
+  get status(): Extensible<JobStatus> {
     return this.data.status;
   }
 }

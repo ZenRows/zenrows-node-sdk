@@ -17,7 +17,7 @@ describe("ZenRows Client with Concurrency", () => {
     const [response1, response2] = responses;
 
     expect(responses.length).toBe(2);
-    expect(response1.status).toBe(200);
-    expect(response2.status).toBe(200);
+    expect(response1?.status).toBe(200);
+    expect(response2?.status).toBe(200);
   });
 });
