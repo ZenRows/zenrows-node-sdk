@@ -47,7 +47,9 @@ import { pollUntil } from "./waiters.js";
 
 const DEFAULT_BATCH_API_URL = "https://async.api.zenrows.com/v1";
 
-const TERMINAL_RUN_STATUSES = new Set(["completed", "stopped", "deleted"]);
+// Run states that never transition again: the default waiter target. `failed` is an
+// account-level auto-fail (e.g. `api_key_cap_reached`, `insufficient_credits`).
+const TERMINAL_RUN_STATUSES = new Set(["completed", "stopped", "failed", "deleted"]);
 const TERMINAL_EXPORT_STATUSES = new Set(["completed", "failed"]);
 
 export interface BatchClientConfig {
@@ -110,7 +112,16 @@ export interface GetResultsOptions {
 
 export interface WaitForRunOptions {
   runId?: string;
+  /**
+   * Statuses that resolve the wait. Defaults to every terminal status (`completed`,
+   * `stopped`, `failed`, `deleted`), so an auto-failed run resolves with its
+   * `failure_reason` / `failure_detail` instead of polling until `timeout`.
+   */
   targetStatuses?: Set<string>;
+  /**
+   * Statuses that reject with `WaiterFailureError`. Takes precedence over `targetStatuses`,
+   * so `new Set(["failed"])` makes a failed run throw. Empty by default.
+   */
   failureStatuses?: Set<string>;
   timeout?: number;
   pollInterval?: number;
@@ -650,7 +661,9 @@ export class ZenRowsBatchClient {
       return this._getRunData(jobId, options.runId);
     };
     return pollUntil(fetchRun, {
-      isDone: (run) => run !== undefined && target.has(run.status),
+      // A status the caller named as a failure throws, even when it is also a target.
+      isDone: (run) =>
+        run !== undefined && target.has(run.status) && !options.failureStatuses?.has(run.status),
       isFailure: (run) => run !== undefined && Boolean(options.failureStatuses?.has(run.status)),
       timeout: options.timeout ?? 300,
       initialInterval: options.pollInterval ?? 2,
