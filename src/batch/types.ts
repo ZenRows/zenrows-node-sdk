@@ -1,3 +1,11 @@
+/**
+ * A server-extensible string enum: the listed values autocomplete, but the server may
+ * return values not listed (the Batch API marks these `x-extensible-enum`). Response fields
+ * use `Extensible<...>`, so callers must handle an unknown value. The named types stay closed
+ * so they keep working as request input.
+ */
+export type Extensible<T extends string> = T | (string & {});
+
 export type JobType = "regular" | "scheduled";
 export type JobStatus = "open" | "closed" | "deleted";
 export type ScheduleState = "active" | "paused";
@@ -45,12 +53,12 @@ export interface Run {
   run_id: string;
   job_id: string;
   run_sequence: number;
-  status: RunStatus;
+  status: Extensible<RunStatus>;
   stats: RunStats;
   last_batch_received?: boolean;
   pause_state?: PauseState;
-  ingest_status?: IngestStatus;
-  failure_reason?: "insufficient_credits" | "subscription_inactive";
+  ingest_status?: Extensible<IngestStatus>;
+  failure_reason?: Extensible<"insufficient_credits" | "subscription_inactive">;
   created_at?: string;
   updated_at?: string;
 }
@@ -58,7 +66,7 @@ export interface Run {
 export interface Job {
   job_id: string;
   type: JobType;
-  status: JobStatus;
+  status: Extensible<JobStatus>;
   format?: string;
   zenrows_params?: Record<string, string>;
   external_id?: string;
@@ -85,7 +93,7 @@ export interface ListJobRunsResponse {
 
 export interface SubmitJobResponse {
   job_id: string;
-  status: JobStatus;
+  status: Extensible<JobStatus>;
   latest_run?: Run;
   accepted_tasks: number;
   webhook?: WebhookConfig;
@@ -93,13 +101,13 @@ export interface SubmitJobResponse {
 
 export interface AddTasksResponse {
   accepted_tasks: number;
-  job_status: JobStatus;
+  job_status: Extensible<JobStatus>;
   latest_run: Run;
 }
 
 export interface RerunJobResponse {
   job_id: string;
-  status: JobStatus;
+  status: Extensible<JobStatus>;
   latest_run: Run;
   rerun_of?: string;
   retried_tasks: number;
@@ -122,7 +130,7 @@ export interface TaskResult {
   url: string;
   metadata?: Record<string, string>;
   method?: "GET" | "POST";
-  status: TaskStatus;
+  status: Extensible<TaskStatus>;
   type?: string;
   result_url?: string;
   error?: ProblemJson;
@@ -149,14 +157,14 @@ export interface TaskHistoryResponse {
 
 export interface StartExportResponse {
   export_id: string;
-  status: ExportStatus;
+  status: Extensible<ExportStatus>;
   created_at: string;
   expires_at: string;
 }
 
 export interface Export {
   export_id: string;
-  status: ExportStatus;
+  status: Extensible<ExportStatus>;
   error?: string;
   download_url?: string;
   created_at: string;

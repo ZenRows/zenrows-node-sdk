@@ -51,6 +51,7 @@ describe("downloadToDir / downloadToMemory / single-task download", () => {
   test("downloadTaskToFile / downloadTaskToMemory work on a single already-held TaskResult", async () => {
     const { results } = await client.getResults("job_download");
     const task = results[0];
+    if (!task) throw new Error("fixture returned no results");
     const memory = await client.downloadTaskToMemory(task);
     expect(memory.toString("utf-8")).toBe("body A");
 

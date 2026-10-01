@@ -24,6 +24,7 @@ import type {
   AddTasksResponse,
   CreateJobInputResponse,
   Export,
+  Extensible,
   HMACKeyCreated,
   HMACKeyFinalized,
   HMACKeyList,
@@ -164,7 +165,7 @@ export class ZenRowsBatchClient {
     const { idempotencyKey, waitForIngest, ...body } = options;
     const resp = await this.transport.requestJson<{
       job_id: string;
-      status: JobStatus;
+      status: Extensible<JobStatus>;
       latest_run?: Run;
       accepted_tasks: number;
       webhook?: WebhookConfig;
