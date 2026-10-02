@@ -1,7 +1,9 @@
+import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, test } from "vitest";
 import { ZenRowsBatchClient } from "../src/batch/client";
 import { ZenRowsBatchError } from "../src/batch/errors";
-import "./_setup";
+import { WaiterFailureError } from "../src/batch/waiters";
+import { server } from "./_setup";
 
 describe("ZenRowsBatchClient — retry/backoff transport", () => {
   let client: ZenRowsBatchClient;
@@ -182,6 +184,65 @@ describe("ZenRowsBatchClient — waitForRun / downloadAllResults", () => {
     const client = new ZenRowsBatchClient("API_KEY");
     const run = await client.waitForRun("job_123", { runId: "run_1", pollInterval: 0.01 });
     expect(run.status).toBe("completed");
+  });
+
+  const runRunningThenFailed = () => {
+    let calls = 0;
+    server.use(
+      http.get("https://async.api.zenrows.com/v1/jobs/job_cap/runs/run_cap", () => {
+        calls += 1;
+        return HttpResponse.json({
+          run_id: "run_cap",
+          job_id: "job_cap",
+          status: calls === 1 ? "running" : "failed",
+          ...(calls === 1
+            ? {}
+            : {
+                failure_reason: "api_key_cap_reached",
+                failure_detail: "API key reached its credit cap",
+              }),
+        });
+      }),
+    );
+    return () => calls;
+  };
+
+  test("waitForRun resolves with a failed run (api_key_cap_reached) instead of timing out", async () => {
+    const calls = runRunningThenFailed();
+    const client = new ZenRowsBatchClient("API_KEY");
+    const run = await client.waitForRun("job_cap", {
+      runId: "run_cap",
+      pollInterval: 0.01,
+      timeout: 0.5,
+    });
+    expect(calls()).toBe(2);
+    expect(run.status).toBe("failed");
+    expect(run.failure_reason).toBe("api_key_cap_reached");
+    expect(run.failure_detail).toBe("API key reached its credit cap");
+  });
+
+  test("run.wait() resolves with a failed run", async () => {
+    runRunningThenFailed();
+    const client = new ZenRowsBatchClient("API_KEY");
+    const handle = await client
+      .run("job_cap", "run_cap")
+      .wait({ pollInterval: 0.01, timeout: 0.5 });
+    expect(handle.data.status).toBe("failed");
+    expect(handle.data.failure_reason).toBe("api_key_cap_reached");
+    expect(handle.data.failure_detail).toBe("API key reached its credit cap");
+  });
+
+  test("failureStatuses containing failed throws, even though failed is a default target", async () => {
+    runRunningThenFailed();
+    const client = new ZenRowsBatchClient("API_KEY");
+    await expect(
+      client.waitForRun("job_cap", {
+        runId: "run_cap",
+        failureStatuses: new Set(["failed"]),
+        pollInterval: 0.01,
+        timeout: 0.5,
+      }),
+    ).rejects.toThrow(WaiterFailureError);
   });
 
   test("downloadAllResults starts an export, waits, and streams the zip to disk", async () => {

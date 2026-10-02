@@ -10,10 +10,21 @@ export type JobType = "regular" | "scheduled";
 export type JobStatus = "open" | "closed" | "deleted";
 export type ScheduleState = "active" | "paused";
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "deleted";
-export type TaskStatus = "pending" | "successful" | "failed";
+export type TaskStatus = "pending" | "processing" | "successful" | "failed";
 export type PauseState = "active" | "paused";
 export type IngestStatus = "pending" | "done";
 export type ExportStatus = "pending" | "running" | "completed" | "failed";
+/**
+ * Why a run auto-failed (`status == "failed"`).
+ * - `insufficient_credits` — the account is out of credits.
+ * - `subscription_inactive` — the subscription is not active.
+ * - `api_key_cap_reached` — the job's API key reached one of its credit caps; resolves when
+ *   that cap's window resets or the cap is raised. `Run.failure_detail` says which.
+ */
+export type RunFailureReason =
+  | "insufficient_credits"
+  | "subscription_inactive"
+  | "api_key_cap_reached";
 
 export interface Spend {
   credits: number;
@@ -58,7 +69,9 @@ export interface Run {
   last_batch_received?: boolean;
   pause_state?: PauseState;
   ingest_status?: Extensible<IngestStatus>;
-  failure_reason?: Extensible<"insufficient_credits" | "subscription_inactive">;
+  failure_reason?: Extensible<RunFailureReason>;
+  /** Human-readable explanation of `failure_reason` (e.g. which cap, and when it resets, UTC). */
+  failure_detail?: string | null;
   created_at?: string;
   updated_at?: string;
 }
