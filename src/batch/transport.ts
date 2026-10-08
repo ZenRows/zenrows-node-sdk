@@ -1,5 +1,6 @@
 import packageJson from "../../package.json" with { type: "json" };
 import { ZenRowsBatchError, parseProblem } from "./errors.js";
+import type { ProblemJson } from "./types.js";
 
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);
 const IDEMPOTENT_METHODS = new Set(["GET", "PUT", "DELETE", "HEAD", "OPTIONS"]);
@@ -33,6 +34,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Builds the error thrown for a non-2xx response. Defaults to `ZenRowsBatchError`. */
+export type ErrorFactory = (
+  response: Response,
+  problem: ProblemJson | undefined,
+  extras: Record<string, unknown> | undefined,
+) => Error;
+
+const batchError: ErrorFactory = (response, problem, extras) =>
+  new ZenRowsBatchError(response.status, problem, extras);
+
 export interface RequestOptions {
   query?: object;
   body?: unknown;
@@ -51,14 +62,15 @@ export class BatchTransport {
     private readonly baseURL: string,
     private readonly apiKey: string,
     private readonly retries: number = DEFAULT_RETRIES,
+    private readonly errorFactory: ErrorFactory = batchError,
   ) {}
 
-  /** Send a request, parse the response, throw `ZenRowsBatchError` on non-2xx. */
+  /** Send a request, parse the response, throw the factory's error on non-2xx. */
   async requestJson<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
     const response = await this.send(method, path, options);
     if (!response.ok) {
       const { problem, extras } = await parseProblem(response);
-      throw new ZenRowsBatchError(response.status, problem, extras);
+      throw this.errorFactory(response, problem, extras);
     }
     const text = await response.text();
     if (!text) {
@@ -72,7 +84,7 @@ export class BatchTransport {
     const response = await this.send(method, path, options);
     if (!response.ok) {
       const { problem, extras } = await parseProblem(response);
-      throw new ZenRowsBatchError(response.status, problem, extras);
+      throw this.errorFactory(response, problem, extras);
     }
     return response;
   }
