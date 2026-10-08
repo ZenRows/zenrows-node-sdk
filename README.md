@@ -269,7 +269,7 @@ const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenro
 
 ### Crawl
 
-[Crawl](https://docs.zenrows.com) (beta) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `iterResults()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `getContent()` or all at once with `download()`.
+[Crawl](https://docs.zenrows.com) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops, staying on the start URL's domain. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `iterResults()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `getContent()` or all at once with `download()`.
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -314,7 +314,7 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code` and `problem`. Branch o
 - `422` `invalid_parameter` / `invalid_start_url`: `problem.detail` names the field.
 - `429` `too_many_crawls`: the account already runs as many crawls and Batch jobs as it may. Nothing was created; retry after `error.retryAfter` seconds.
 
-Crawl is in beta. This release supports link discovery with URL-only or HTML output. JSON output and pagination discovery are not exposed. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`, like Batch's.
+`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`, like Batch's.
 
 The crawl client (`ZenRowsCrawlClient`) also works standalone:
 

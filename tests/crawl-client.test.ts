@@ -76,7 +76,7 @@ describe("ZenRowsCrawlClient — requests", () => {
     });
   });
 
-  test("create omits the fields the caller did not set, and never sends discovery", async () => {
+  test("create sends only the fields the caller set", async () => {
     let body: unknown;
     server.use(
       http.post(`${BASE}/crawls`, async ({ request }) => {
@@ -116,7 +116,7 @@ describe("ZenRowsCrawlClient — requests", () => {
   test("tolerates unknown fields and enum values in responses", async () => {
     server.use(
       http.get(`${BASE}/crawls/c_1`, () =>
-        HttpResponse.json({ ...crawl({ status: "archived" }), discovery: ["links"], new_field: 1 }),
+        HttpResponse.json({ ...crawl({ status: "archived" }), new_field: 1 }),
       ),
     );
     const got = await client.get("c_1");
@@ -299,7 +299,7 @@ describe("ZenRowsCrawlClient — errors", () => {
           {
             code: "REQS008",
             title: "Crawl is not enabled for this account.",
-            detail: "Crawl is in private beta. Contact support to request access.",
+            detail: "Crawl is not enabled for this account.",
             status: 403,
             type: "https://docs.zenrows.com/api-error-codes#REQS008",
             instance: "/v1/crawls",
