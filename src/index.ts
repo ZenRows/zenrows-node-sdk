@@ -2,6 +2,7 @@ import fastq from "fastq";
 import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRowsBatchClient } from "./batch/client.js";
+import { ZenRowsCrawlClient } from "./crawl/client.js";
 
 export * from "./batch/client.js";
 export * from "./batch/errors.js";
@@ -10,6 +11,9 @@ export * from "./batch/schedule.js";
 export * from "./batch/waiters.js";
 export * from "./batch/download.js";
 export type * from "./batch/types.js";
+export * from "./crawl/client.js";
+export { CRAWL_NOT_ENABLED_CODE, ZenRowsCrawlError } from "./crawl/errors.js";
+export type * from "./crawl/types.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -66,11 +70,14 @@ export class ZenRows {
   readonly fetchWithRetry;
   /** Client for the Batch API (async job/run/task model) — see `./batch.ts`. */
   readonly batch: ZenRowsBatchClient;
+  /** Client for the Crawl API (one start URL in, the URLs behind it out) — see `./crawl/client.ts`. */
+  readonly crawl: ZenRowsCrawlClient;
 
   constructor(apiKey: string, clientConfig: ClientConfig = {}) {
     this.apiKey = apiKey;
     this.clientConfig = clientConfig;
     this.batch = new ZenRowsBatchClient(apiKey);
+    this.crawl = new ZenRowsCrawlClient(apiKey);
     const retries = this.clientConfig.retries ?? 0;
 
     this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);

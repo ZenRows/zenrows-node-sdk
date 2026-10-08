@@ -19,10 +19,12 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
   - [Batch](#batch)
     - [Failed runs and extensible values](#failed-runs-and-extensible-values)
     - [Extract in a batch](#extract-in-a-batch)
+  - [Crawl](#crawl)
   - [Concurrency](#concurrency)
     - [An important note about Promise.allSettled() on TypeScript](#an-important-note-about-promiseallsettled-on-typescript)
 - [Examples](#examples)
 - [Contributing](#contributing)
+  - [Running the Crawl e2e test](#running-the-crawl-e2e-test)
 - [License](#license)
 
 ## Installation
@@ -265,6 +267,63 @@ const { ZenRowsBatchClient } = require("zenrows");
 const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenrows.com/v1" }); // baseURL is optional
 ```
 
+### Crawl
+
+[Crawl](https://docs.zenrows.com) (beta) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `iterResults()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `getContent()` or all at once with `download()`.
+
+```javascript
+const { ZenRows } = require("zenrows");
+
+const apiKey = "YOUR-API-KEY";
+
+(async () => {
+  const client = new ZenRows(apiKey);
+
+  const crawl = await client.crawl.create({
+    url: "https://www.scrapingcourse.com/ecommerce/",
+    depth: 1, // link hops from the start URL
+    maxItems: 10, // stop once this many URLs are kept
+    maxPages: 20, // stop once this many pages are fetched; bounds the cost
+    includePatterns: ["/product/"], // keep only URLs containing one of these
+    outputFormat: "html", // omit for URLs only
+  });
+
+  const ended = await client.crawl.wait(crawl.crawl_id); // completed, stopped or failed
+  if (ended.status === "failed") throw new Error(ended.error?.detail);
+
+  for await (const result of client.crawl.iterResults(crawl.crawl_id)) {
+    console.log(result.url);
+    if (result.content_status === "fetched") {
+      const html = await client.crawl.getContent(crawl.crawl_id, result);
+    }
+  }
+
+  // Or every result, with its page, as parsed NDJSON lines.
+  for await (const line of client.crawl.download(crawl.crawl_id)) {
+    console.log(line.url, line.content?.length);
+  }
+})();
+```
+
+`client.crawl` also exposes `get()` (status, coverage and one page of results), `list()` and `iterCrawls()` (the account's crawls, newest first), and `stop()` (idempotent; a crawl that already ended answers as it ended). `create()` takes an `idempotencyKey` option, so a retried create does not start a second crawl. Read results after `wait()`: while a crawl runs, `iterResults()` yields only what it has kept so far. `wait()` throws `WaiterTimeoutError` after `timeout` seconds (default 300) and leaves the crawl running.
+
+Errors throw a `ZenRowsCrawlError` with `status`, `code` and `problem`. Branch on `status` and `code`:
+
+- `403` `REQS008`: Crawl is not enabled for this account.
+- `404` `crawl_not_found` / `content_not_found`.
+- `422` `invalid_parameter` / `invalid_start_url`: `problem.detail` names the field.
+- `429` `too_many_crawls`: the account already runs as many crawls and Batch jobs as it may. Nothing was created; retry after `error.retryAfter` seconds.
+
+Crawl is in beta. This release supports link discovery with URL-only or HTML output. JSON output and pagination discovery are not exposed. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`, like Batch's.
+
+The crawl client (`ZenRowsCrawlClient`) also works standalone:
+
+```javascript
+const { ZenRowsCrawlClient } = require("zenrows");
+
+const crawl = new ZenRowsCrawlClient(apiKey, { baseURL: "https://api.zenrows.com/v1" }); // baseURL is optional
+```
+
 ### Concurrency
 
 To limit the concurrency, it uses [fastq](https://github.com/mcollina/fastq), which will simultaneously send a maximum of requests. The concurrency is determined by the plan you are in, so take a look at the [pricing](https://www.zenrows.com/pricing) and set it accordingly. Take into account that each client instance will have its own limit, meaning that two different scripts will not share it, and 429 (Too Many Requests) errors might arise.
@@ -339,6 +398,23 @@ npx tsx index.ts # TS example
 ## Contributing
 
 Pull requests are welcome. For significant changes, please open an issue first to discuss what you would like to change.
+
+Before opening a pull request, run `pnpm check` and `pnpm test -- --run`. Neither touches the network.
+
+### Running the Crawl e2e test
+
+`tests/e2e/crawl.e2e.test.ts` runs a real crawl (a small one, of `https://www.scrapingcourse.com/ecommerce/`) and checks every Crawl method against the live API. It is skipped unless both variables are set:
+
+- `ZENROWS_API_KEY`: a key with Crawl access. Keep it out of your shell history, e.g. read it from a file.
+- `ZENROWS_CRAWL_BASE_URL`: the API base, e.g. `https://api.zenrows.com/v1`. Point it at a local or staging deployment to test that instead.
+
+```bash
+export ZENROWS_API_KEY="$(cat path/to/key-file)"
+export ZENROWS_CRAWL_BASE_URL=https://api.zenrows.com/v1
+pnpm test:e2e
+```
+
+The run creates one crawl on the account and uses up to a few pages of credits. If the account already runs as many crawls and Batch jobs as it may, the test waits for a slot (up to 5 minutes).
 
 ## License
 
