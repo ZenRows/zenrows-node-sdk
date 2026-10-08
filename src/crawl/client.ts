@@ -81,8 +81,8 @@ export class ZenRowsCrawlClient {
   /**
    * Start a crawl. Sends only the fields you set. With an `idempotencyKey`, a retry returns the
    * crawl the first request created instead of starting another, and transient failures are
-   * retried. A 429 `too_many_crawls` (the account's active crawls and Batch jobs are at their
-   * limit) throws `ZenRowsCrawlError` with `retryAfter` set.
+   * retried. A 429 `too_many_crawls` (the account has too many crawls running) throws
+   * `ZenRowsCrawlError` with `retryAfter` set.
    */
   create(options: CreateCrawlOptions, opts: { idempotencyKey?: string } = {}): Promise<Crawl> {
     const body = {

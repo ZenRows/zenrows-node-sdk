@@ -41,7 +41,7 @@ export class ZenRowsCrawlError extends Error {
   }
 }
 
-/** @internal Error factory for the shared transport. */
+/** @internal Builds a `ZenRowsCrawlError` for the shared transport. */
 export function crawlError(
   response: Response,
   problem: ProblemJson | undefined,

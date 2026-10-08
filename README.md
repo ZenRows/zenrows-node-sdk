@@ -312,9 +312,9 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code` and `problem`. Branch o
 - `403` `REQS008`: Crawl is not enabled for this account.
 - `404` `crawl_not_found` / `content_not_found`.
 - `422` `invalid_parameter` / `invalid_start_url`: `problem.detail` names the field.
-- `429` `too_many_crawls`: the account already runs as many crawls and Batch jobs as it may. Nothing was created; retry after `error.retryAfter` seconds.
+- `429` `too_many_crawls`: the account has too many crawls running. Nothing was created; retry after `error.retryAfter` seconds.
 
-`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`, like Batch's.
+`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`.
 
 The crawl client (`ZenRowsCrawlClient`) also works standalone:
 
@@ -414,7 +414,7 @@ export ZENROWS_CRAWL_BASE_URL=https://api.zenrows.com/v1
 pnpm test:e2e
 ```
 
-The run creates one crawl on the account and uses up to a few pages of credits. If the account already runs as many crawls and Batch jobs as it may, the test waits for a slot (up to 5 minutes).
+The run creates one crawl on the account and uses up to a few pages of credits. If the account has too many crawls running, the test waits and retries (up to 5 minutes).
 
 ## License
 

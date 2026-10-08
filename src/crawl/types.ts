@@ -5,12 +5,7 @@ export type CrawlStatus = "running" | "completed" | "stopped" | "failed";
 /** What ended a crawl early: a limit (`status: completed`) or `stop()` (`status: stopped`). */
 export type CrawlStopReason = "max_items" | "max_pages" | "user";
 /** Why a crawl failed (`status: failed`). */
-export type CrawlErrorCode =
-  | "insufficient_credits"
-  | "seed_unreachable"
-  | "domain_not_allowed"
-  | "no_items_found"
-  | "internal_error";
+export type CrawlErrorCode = "insufficient_credits" | "seed_unreachable" | "no_items_found";
 /** Where a kept URL's page stands, when the crawl has an `output_format`. */
 export type CrawlContentStatus = "pending" | "fetched" | "failed";
 /** Return each kept URL's page as fetched. Absent means URLs only. */
