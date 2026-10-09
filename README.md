@@ -321,6 +321,7 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code`, `detail` and `retryAft
 - `409` `idempotency_request_in_flight`: a request with the same `idempotencyKey` is still running. Retry after it finishes.
 - `422` `invalid_parameter` / `invalid_start_url` / `domain_not_allowed`: `detail` names the problem. `422` `idempotency_key_reused`: the key was used with a different body. Use a new key or no key; do not retry as is.
 - `429` `too_many_crawls`: the account has reached its limit of active jobs (3 by default), shared with its Batch jobs. Nothing was created. `create()` never retries it; retry after `error.retryAfter` seconds.
+- `503` `crawl_busy`: the stop could not be saved yet; the crawl is still running. `stop()` retries it up to `retries` times, waiting `error.retryAfter` seconds, then throws it. Repeating the stop is safe.
 
 `content()` takes a content id, a `content_url` or a result, and throws a `TypeError` when it cannot read a content id from it. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
 
