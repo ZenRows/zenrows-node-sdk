@@ -269,7 +269,7 @@ const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenro
 
 ### Crawl
 
-[Crawl](https://docs.zenrows.com) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops, staying on the start URL's domain. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `iterResults()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `getContent()` or all at once with `download()`.
+[Crawl](https://docs.zenrows.com/crawl/introduction) (beta) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -288,40 +288,51 @@ const apiKey = "YOUR-API-KEY";
     outputFormat: "html", // omit for URLs only
   });
 
-  const ended = await client.crawl.wait(crawl.crawl_id); // completed, stopped or failed
+  const ended = await client.crawl.wait(crawl.crawl_id); // completed, stopped, failed, or running on timeout
   if (ended.status === "failed") throw new Error(ended.error?.detail);
 
-  for await (const result of client.crawl.iterResults(crawl.crawl_id)) {
+  for await (const result of client.crawl.results(crawl.crawl_id)) {
     console.log(result.url);
     if (result.content_status === "fetched") {
-      const html = await client.crawl.getContent(crawl.crawl_id, result);
+      const html = await client.crawl.content(crawl.crawl_id, result);
     }
   }
 
   // Or every result, with its page, as parsed NDJSON lines.
-  for await (const line of client.crawl.download(crawl.crawl_id)) {
-    console.log(line.url, line.content?.length);
+  const download = await client.crawl.download(crawl.crawl_id);
+  console.log(download.status); // from X-Crawl-Status; "running" means more lines may come later
+  for await (const line of download.lines) {
+    console.log(line.url, line.content);
   }
 })();
 ```
 
-`client.crawl` also exposes `get()` (status, coverage and one page of results), `list()` and `iterCrawls()` (the account's crawls, newest first), and `stop()` (idempotent; a crawl that already ended answers as it ended). `create()` takes an `idempotencyKey` option, so a retried create does not start a second crawl. Read results after `wait()`: while a crawl runs, `iterResults()` yields only what it has kept so far. `wait()` throws `WaiterTimeoutError` after `timeout` seconds (default 300) and leaves the crawl running.
+`client.crawl` also exposes `get()` (status, coverage and one page of results), `list()` (one page of the account's crawls, newest first, with `next_cursor` until the last page), and `stop()` (idempotent; a crawl that already ended answers as it ended). `create()` takes an `idempotencyKey` option, so a retried create does not start a second crawl.
 
-Errors throw a `ZenRowsCrawlError` with `status`, `code` and `problem`. Branch on `status` and `code`:
+`results()` does not poll. On a running crawl it yields only what the crawl has kept so far, then returns. Call `wait()` first to read every result. `wait()` polls for up to `timeout` seconds (default 600). When the time runs out, it returns the crawl with status `running` and does not throw; the crawl keeps running.
 
+Errors throw a `ZenRowsCrawlError` with `status`, `code`, `detail` and `retryAfter`. `code` is undefined when the error body has no code. Branch on `status` and `code`:
+
+- `400` `invalid_request` / `unknown_parameter` / `invalid_cursor`.
 - `403` `REQS008`: Crawl is not enabled for this account.
 - `404` `crawl_not_found` / `content_not_found`.
-- `422` `invalid_parameter` / `invalid_start_url`: `problem.detail` names the field.
-- `429` `too_many_crawls`: the account has too many crawls running. Nothing was created; retry after `error.retryAfter` seconds.
+- `409` `idempotency_request_in_flight`: a request with the same `idempotencyKey` is still running. Retry after it finishes.
+- `422` `invalid_parameter` / `invalid_start_url` / `domain_not_allowed`: `detail` names the problem. `422` `idempotency_key_reused`: the key was used with a different body. Use a new key or no key; do not retry as is.
+- `429` `too_many_crawls`: the account has reached its limit of active jobs (3 by default), shared with its Batch jobs. Nothing was created. `create()` never retries it; retry after `error.retryAfter` seconds.
 
-`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`.
+`content()` throws a `TypeError` when you pass a result without a usable `content_url`. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
 
-The crawl client (`ZenRowsCrawlClient`) also works standalone:
+`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`. A download line's `content` is a string, or an object for a crawl that returns JSON.
+
+The crawl client (`ZenRowsCrawlClient`) also works standalone. Both forms take the same options:
 
 ```javascript
-const { ZenRowsCrawlClient } = require("zenrows");
+const { ZenRows, ZenRowsCrawlClient } = require("zenrows");
 
-const crawl = new ZenRowsCrawlClient(apiKey, { baseURL: "https://api.zenrows.com/v1" }); // baseURL is optional
+// All options are optional. timeout is in seconds and applies to each HTTP request, not to reading a download.
+const options = { baseURL: "https://api.zenrows.com/v1", retries: 3, timeout: 30 };
+const crawl = new ZenRowsCrawlClient(apiKey, options);
+const client = new ZenRows(apiKey, { crawl: options }); // client.crawl uses them
 ```
 
 ### Concurrency
@@ -403,22 +414,21 @@ Before opening a pull request, run `pnpm check` and `pnpm test -- --run`. Neithe
 
 ### Running the Crawl e2e test
 
-`tests/e2e/crawl.e2e.test.ts` runs a small real crawl (depth 1, up to 3 items and 5 pages, HTML output) and checks every Crawl method against the live API. It is skipped unless the first three variables are set:
+`tests/e2e/crawl.e2e.test.ts` runs a small real crawl (depth 1, up to 3 items and 5 pages, HTML output) and checks every Crawl method against the live API. It is skipped unless `ZENROWS_API_KEY` and `ZENROWS_E2E_CRAWL_URL` are set:
 
 - `ZENROWS_API_KEY`: a key with Crawl access. Keep it out of your shell history, e.g. read it from a file.
-- `ZENROWS_CRAWL_BASE_URL`: the API base, e.g. `https://api.zenrows.com/v1`. Point it at a local or staging deployment to test that instead.
+- `ZENROWS_CRAWL_BASE_URL` (optional): the API base. Default `https://api.zenrows.com/v1`. Point it at a local or staging deployment to test that instead.
 - `ZENROWS_E2E_CRAWL_URL`: the start URL to crawl, a site you may crawl whose start page links to at least one page.
 - `ZENROWS_E2E_CRAWL_INCLUDE` (optional): an include pattern, e.g. `/product/`. When set, the crawl keeps only matching URLs and the test asserts every result contains it.
 
 ```bash
 export ZENROWS_API_KEY="$(cat path/to/key-file)"
-export ZENROWS_CRAWL_BASE_URL=https://api.zenrows.com/v1
 export ZENROWS_E2E_CRAWL_URL=https://example.com/products/
 export ZENROWS_E2E_CRAWL_INCLUDE=/product/
 pnpm test:e2e
 ```
 
-The run creates one crawl on the account and uses up to a few pages of credits. If the account has too many crawls running, the test waits and retries (up to 5 minutes).
+The run creates one crawl on the account and uses up to a few pages of credits. If the account has reached its limit of active jobs, the test waits and retries (up to 5 minutes).
 
 ## License
 

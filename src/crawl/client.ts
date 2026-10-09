@@ -1,8 +1,9 @@
 import { BatchTransport } from "../batch/transport.js";
-import { pollUntil } from "../batch/waiters.js";
+import { WaiterTimeoutError, pollUntil } from "../batch/waiters.js";
 import { crawlError } from "./errors.js";
 import type {
   Crawl,
+  CrawlDownload,
   CrawlExportLine,
   CrawlList,
   CrawlOutputFormat,
@@ -12,15 +13,25 @@ import type {
 } from "./types.js";
 
 const DEFAULT_CRAWL_API_URL = "https://api.zenrows.com/v1";
+const DEFAULT_TIMEOUT_SECONDS = 30;
+const DEFAULT_WAIT_TIMEOUT_SECONDS = 600;
+const POLL_INTERVAL_SECONDS = 2;
+const MAX_POLL_INTERVAL_SECONDS = 15;
+// 429 `too_many_crawls` is a capacity limit: a retry only waits for a slot the caller may never get.
+const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
+/** @beta */
 export interface CrawlClientConfig {
   /** Override the Crawl API base URL. Default `https://api.zenrows.com/v1`. */
   baseURL?: string;
-  /** Retries for transient failures (429/502/503/504 + network errors) on idempotent requests. Default 3. */
+  /** Retries for transient failures (502/503/504, network errors, 429 on reads) on idempotent requests. Default 3. */
   retries?: number;
+  /** Seconds each HTTP request may take. Default 30. Does not limit reading a `download()` body. */
+  timeout?: number;
 }
 
-export interface CreateCrawlOptions {
+/** @beta */
+export interface CreateCrawlParams {
   /** The page the crawl starts from: an absolute public `http`/`https` URL. */
   url: string;
   /** Link hops to follow from the start URL, 1–100000. */
@@ -37,32 +48,50 @@ export interface CreateCrawlOptions {
   outputFormat?: CrawlOutputFormat;
 }
 
+/** @beta */
 export interface WaitForCrawlOptions {
-  /** Seconds before `WaiterTimeoutError`. Default 300. The crawl keeps running on timeout. */
+  /** Seconds to poll before returning the crawl as it stands. Default 600. */
   timeout?: number;
-  /** Seconds before the first re-poll. Default 2; grows ×1.5 per poll. */
-  pollInterval?: number;
-  /** Cap on the poll interval in seconds. Default 15. */
-  maxPollInterval?: number;
 }
 
 function contentIdOf(content: string | CrawlResult): string {
   if (typeof content === "string") return content;
   if (!content.content_url) {
-    throw new Error(
-      `getContent: result for ${content.url} has no content_url (content_status: ${content.content_status ?? "absent"})`,
+    throw new TypeError(
+      `content: result for ${content.url} has no content_url (content_status: ${content.content_status ?? "absent"})`,
     );
   }
   const id = content.content_url.split("/").pop();
-  if (!id) throw new Error(`getContent: cannot read a content id from ${content.content_url}`);
+  if (!id) throw new TypeError(`content: cannot read a content id from ${content.content_url}`);
   return id;
 }
 
+async function* ndjsonLines(
+  body: AsyncIterable<Uint8Array> | null,
+): AsyncGenerator<CrawlExportLine> {
+  if (!body) return;
+  const decoder = new TextDecoder();
+  let buffered = "";
+  for await (const chunk of body) {
+    buffered += decoder.decode(chunk, { stream: true });
+    let newline = buffered.indexOf("\n");
+    while (newline !== -1) {
+      const line = buffered.slice(0, newline).trim();
+      buffered = buffered.slice(newline + 1);
+      if (line) yield JSON.parse(line) as CrawlExportLine;
+      newline = buffered.indexOf("\n");
+    }
+  }
+  const last = (buffered + decoder.decode()).trim();
+  if (last) yield JSON.parse(last) as CrawlExportLine;
+}
+
 /**
- * Client for the Zenrows Crawl API: give it one start URL, read back the URLs behind it.
+ * Client for the Zenrows Crawl API (beta): give it one start URL, read back the URLs behind it.
  * Usable standalone (`new ZenRowsCrawlClient(apiKey)`) or via `client.crawl` on a `ZenRows`
  * instance. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it
- * ends, and `iterResults()` / `download()` read what it kept.
+ * ends, and `results()` / `download()` read what it kept.
+ * @beta
  */
 export class ZenRowsCrawlClient {
   readonly apiKey: string;
@@ -75,28 +104,30 @@ export class ZenRowsCrawlClient {
       apiKey,
       config.retries,
       crawlError,
+      (config.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000,
     );
   }
 
   /**
    * Start a crawl. Sends only the fields you set. With an `idempotencyKey`, a retry returns the
-   * crawl the first request created instead of starting another, and transient failures are
-   * retried. A 429 `too_many_crawls` (the account has too many crawls running) throws
-   * `ZenRowsCrawlError` with `retryAfter` set.
+   * crawl the first request created instead of starting another, and 5xx and network failures
+   * are retried. A 429 `too_many_crawls` is never retried: it throws `ZenRowsCrawlError` with
+   * `retryAfter` set.
    */
-  create(options: CreateCrawlOptions, opts: { idempotencyKey?: string } = {}): Promise<Crawl> {
+  create(params: CreateCrawlParams, opts: { idempotencyKey?: string } = {}): Promise<Crawl> {
     const body = {
-      url: options.url,
-      depth: options.depth,
-      max_items: options.maxItems,
-      max_pages: options.maxPages,
-      include_patterns: options.includePatterns,
-      exclude_patterns: options.excludePatterns,
-      output_format: options.outputFormat,
+      url: params.url,
+      depth: params.depth,
+      max_items: params.maxItems,
+      max_pages: params.maxPages,
+      include_patterns: params.includePatterns,
+      exclude_patterns: params.excludePatterns,
+      output_format: params.outputFormat,
     };
     return this.transport.requestJson("POST", "/crawls", {
       body,
       idempotencyKey: opts.idempotencyKey,
+      retryStatuses: CREATE_RETRY_STATUSES,
     });
   }
 
@@ -115,25 +146,12 @@ export class ZenRowsCrawlClient {
     return this.transport.requestJson("GET", "/crawls", { query: options });
   }
 
-  /** Every crawl of the account, newest first, following `next_cursor`. */
-  async *iterCrawls(options: { limit?: number } = {}): AsyncGenerator<Crawl> {
-    let cursor: string | undefined;
-    while (true) {
-      const page = await this.list({ ...options, cursor });
-      yield* page.crawls;
-      cursor = page.next_cursor;
-      if (!cursor) return;
-    }
-  }
-
   /**
-   * Every URL the crawl kept, following `next_cursor` until it is null. Call it once the crawl
-   * has ended (see `wait()`): on a running crawl it yields the URLs kept so far and returns.
+   * Every URL the crawl kept, following `next_cursor` (`limit` is the page size). On a running
+   * crawl it yields the URLs kept so far and returns at the first empty page; it does not poll.
+   * Call `wait()` first to read every result.
    */
-  async *iterResults(
-    crawlId: string,
-    options: { limit?: number } = {},
-  ): AsyncGenerator<CrawlResult> {
+  async *results(crawlId: string, options: { limit?: number } = {}): AsyncGenerator<CrawlResult> {
     let cursor: string | undefined;
     while (true) {
       const page = await this.get(crawlId, { ...options, cursor });
@@ -152,56 +170,54 @@ export class ZenRowsCrawlClient {
   /**
    * One kept URL's page as fetched (HTML). Pass the content id, or the `CrawlResult` itself
    * (its `content_url` names the content; present once `content_status` is `fetched`).
+   * Throws `TypeError` for a result without a usable `content_url`.
    */
-  async getContent(crawlId: string, content: string | CrawlResult): Promise<string> {
-    const contentId = contentIdOf(content);
-    const response = await this.transport.requestRaw(
+  async content(crawlId: string, content: string | CrawlResult): Promise<string> {
+    return this.transport.requestText(
       "GET",
-      `/crawls/${encodeURIComponent(crawlId)}/contents/${encodeURIComponent(contentId)}`,
+      `/crawls/${encodeURIComponent(crawlId)}/contents/${encodeURIComponent(contentIdOf(content))}`,
     );
-    return response.text();
   }
 
   /**
-   * Every result of the crawl in one download, one parsed line at a time (with the page when
-   * the crawl has an `output_format`). On a running crawl it holds what was kept so far.
+   * Every result of the crawl in one download: its `status` and the parsed lines (with the
+   * page when the crawl has an `output_format`). On a running crawl, `status` is `running` and
+   * the lines hold only what was kept so far.
    */
-  async *download(crawlId: string): AsyncGenerator<CrawlExportLine> {
+  async download(crawlId: string): Promise<CrawlDownload> {
     const response = await this.transport.requestRaw(
       "GET",
       `/crawls/${encodeURIComponent(crawlId)}/download`,
     );
-    if (!response.body) return;
-    const decoder = new TextDecoder();
-    let buffered = "";
-    for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
-      buffered += decoder.decode(chunk, { stream: true });
-      let newline = buffered.indexOf("\n");
-      while (newline !== -1) {
-        const line = buffered.slice(0, newline).trim();
-        buffered = buffered.slice(newline + 1);
-        if (line) yield JSON.parse(line) as CrawlExportLine;
-        newline = buffered.indexOf("\n");
-      }
-    }
-    const last = (buffered + decoder.decode()).trim();
-    if (last) yield JSON.parse(last) as CrawlExportLine;
+    return {
+      status: response.headers.get("X-Crawl-Status") ?? undefined,
+      lines: ndjsonLines(response.body as AsyncIterable<Uint8Array> | null),
+    };
   }
 
   /**
-   * Poll until the crawl ends (any status but `running`) and return it, without results.
-   * A `failed` crawl resolves too: read `error`. Throws `WaiterTimeoutError` after `timeout`
-   * seconds; the crawl is not stopped.
+   * Poll until the crawl ends (any status but `running`) or `timeout` seconds pass, and return
+   * it, without results. A `failed` crawl resolves too: read `error`. On timeout the crawl is
+   * returned with status `running` and keeps running.
    */
   async wait(crawlId: string, options: WaitForCrawlOptions = {}): Promise<Crawl> {
-    // `limit: 1` keeps each poll cheap; the one result it reads is dropped.
-    const ended = await pollUntil(() => this.get(crawlId, { limit: 1 }), {
-      isDone: (c) => c.status !== "running",
-      timeout: options.timeout ?? 300,
-      initialInterval: options.pollInterval ?? 2,
-      maxInterval: options.maxPollInterval ?? 15,
-    });
-    const { results: _results, next_cursor: _cursor, ...crawl } = ended;
+    let latest: CrawlWithResults | undefined;
+    try {
+      // `limit: 1` keeps each poll cheap; the one result it reads is dropped.
+      const poll = async () => {
+        latest = await this.get(crawlId, { limit: 1 });
+        return latest;
+      };
+      await pollUntil(poll, {
+        isDone: (c) => c.status !== "running",
+        timeout: options.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS,
+        initialInterval: POLL_INTERVAL_SECONDS,
+        maxInterval: MAX_POLL_INTERVAL_SECONDS,
+      });
+    } catch (error) {
+      if (!(error instanceof WaiterTimeoutError)) throw error;
+    }
+    const { results: _results, next_cursor: _cursor, ...crawl } = latest as CrawlWithResults;
     return crawl;
   }
 }

@@ -1,7 +1,6 @@
 import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ZenRows } from "../src";
-import { WaiterTimeoutError } from "../src/batch/waiters";
 import { ZenRowsCrawlClient } from "../src/crawl/client";
 import { ZenRowsCrawlError } from "../src/crawl/errors";
 import type { CrawlWithResults } from "../src/crawl/types";
@@ -121,22 +120,22 @@ describe("ZenRowsCrawlClient — requests", () => {
     expect(got.status).toBe("archived");
   });
 
-  test("list and iterCrawls follow next_cursor until it is absent", async () => {
+  test("list passes cursor and limit and returns one page", async () => {
+    let query: URLSearchParams | undefined;
     server.use(
       http.get(`${BASE}/crawls`, ({ request }) => {
-        const cursor = new URL(request.url).searchParams.get("cursor");
-        if (!cursor) {
-          return HttpResponse.json({ crawls: [crawl({ crawl_id: "c_2" })], next_cursor: "p2" });
-        }
-        return HttpResponse.json({ crawls: [crawl({ crawl_id: "c_1" })] });
+        query = new URL(request.url).searchParams;
+        return HttpResponse.json({ crawls: [crawl({ crawl_id: "c_2" })], next_cursor: "p2" });
       }),
     );
-    const ids: string[] = [];
-    for await (const c of client.iterCrawls()) ids.push(c.crawl_id);
-    expect(ids).toEqual(["c_2", "c_1"]);
+    const page = await client.list({ cursor: "p1", limit: 5 });
+    expect(query?.get("cursor")).toBe("p1");
+    expect(query?.get("limit")).toBe("5");
+    expect(page.crawls.map((c) => c.crawl_id)).toEqual(["c_2"]);
+    expect(page.next_cursor).toBe("p2");
   });
 
-  test("iterResults follows next_cursor and stops on null", async () => {
+  test("results follows next_cursor and stops on null", async () => {
     const cursors: (string | null)[] = [];
     server.use(
       http.get(`${BASE}/crawls/c_1`, ({ request }) => {
@@ -149,12 +148,12 @@ describe("ZenRowsCrawlClient — requests", () => {
       }),
     );
     const urls: string[] = [];
-    for await (const r of client.iterResults("c_1")) urls.push(r.url);
+    for await (const r of client.results("c_1")) urls.push(r.url);
     expect(urls).toEqual(["u1", "u2"]);
     expect(cursors).toEqual([null, "cur_1"]);
   });
 
-  test("iterResults on a running crawl returns once nothing more is kept yet", async () => {
+  test("results on a running crawl returns once nothing more is kept yet", async () => {
     let calls = 0;
     server.use(
       http.get(`${BASE}/crawls/c_1`, ({ request }) => {
@@ -165,7 +164,7 @@ describe("ZenRowsCrawlClient — requests", () => {
       }),
     );
     const urls: string[] = [];
-    for await (const r of client.iterResults("c_1")) urls.push(r.url);
+    for await (const r of client.results("c_1")) urls.push(r.url);
     expect(urls).toEqual(["u1"]);
     expect(calls).toBe(2);
   });
@@ -183,15 +182,15 @@ describe("ZenRowsCrawlClient — requests", () => {
     expect(stopped).toEqual({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
   });
 
-  test("getContent takes a content id or a result's content_url", async () => {
+  test("content takes a content id or a result's content_url", async () => {
     server.use(
       http.get(`${BASE}/crawls/c_1/contents/ct_9`, () =>
         HttpResponse.text("<html>page</html>", { headers: { "Content-Type": "text/html" } }),
       ),
     );
-    expect(await client.getContent("c_1", "ct_9")).toBe("<html>page</html>");
+    expect(await client.content("c_1", "ct_9")).toBe("<html>page</html>");
     expect(
-      await client.getContent("c_1", {
+      await client.content("c_1", {
         url: "https://example.com/product/a",
         content_status: "fetched",
         content_url: "/v1/crawls/c_1/contents/ct_9",
@@ -199,17 +198,28 @@ describe("ZenRowsCrawlClient — requests", () => {
     ).toBe("<html>page</html>");
   });
 
-  test("getContent refuses a result whose page was not fetched", async () => {
+  test("content rejects with a TypeError for a result without a usable content_url", async () => {
     await expect(
-      client.getContent("c_1", { url: "https://example.com/a", content_status: "pending" }),
-    ).rejects.toThrow(/no content_url/);
+      client.content("c_1", { url: "https://example.com/a", content_status: "pending" }),
+    ).rejects.toThrow(
+      new TypeError(
+        "content: result for https://example.com/a has no content_url (content_status: pending)",
+      ),
+    );
+    await expect(
+      client.content("c_1", {
+        url: "https://example.com/a",
+        content_url: "/v1/crawls/c_1/contents/",
+      }),
+    ).rejects.toBeInstanceOf(TypeError);
   });
 
-  test("download yields one parsed object per NDJSON line, across chunk boundaries", async () => {
+  test("download returns X-Crawl-Status and one parsed object per NDJSON line, across chunks", async () => {
     const lines = [
       { url: "u1", content_status: "fetched", content: "<html>1</html>" },
-      { url: "u2", content_status: "failed" },
-      { url: "u3" },
+      { url: "u2", content_status: "fetched", content: { title: "A" } },
+      { url: "u3", content_status: "failed" },
+      { url: "u4" },
     ];
     const text = `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`;
     server.use(
@@ -222,13 +232,47 @@ describe("ZenRowsCrawlClient — requests", () => {
           },
         });
         return new HttpResponse(stream, {
-          headers: { "Content-Type": "application/x-ndjson", "X-Crawl-Status": "completed" },
+          headers: { "Content-Type": "application/x-ndjson", "X-Crawl-Status": "running" },
         });
       }),
     );
+    const download = await client.download("c_1");
+    expect(download.status).toBe("running");
     const got = [];
-    for await (const line of client.download("c_1")) got.push(line);
+    for await (const line of download.lines) got.push(line);
     expect(got).toEqual(lines);
+  });
+
+  test("a request that outlasts the timeout fails", async () => {
+    server.use(
+      http.get(`${BASE}/crawls/c_1`, async () => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        return HttpResponse.json(crawl());
+      }),
+    );
+    const quick = new ZenRowsCrawlClient("API_KEY", { timeout: 0.02, retries: 0 });
+    await expect(quick.get("c_1")).rejects.toThrow(/timed out after 0.02s/);
+  });
+
+  test("the timeout does not cut a download body read after the headers", async () => {
+    server.use(
+      http.get(`${BASE}/crawls/c_1/download`, () => {
+        const bytes = new TextEncoder().encode('{"url":"u1"}\n');
+        const stream = new ReadableStream({
+          async start(controller) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+        return new HttpResponse(stream, { headers: { "X-Crawl-Status": "completed" } });
+      }),
+    );
+    const quick = new ZenRowsCrawlClient("API_KEY", { timeout: 0.02 });
+    const download = await quick.download("c_1");
+    const got = [];
+    for await (const line of download.lines) got.push(line);
+    expect(got).toEqual([{ url: "u1" }]);
   });
 });
 
@@ -263,31 +307,67 @@ describe("ZenRowsCrawlClient — errors", () => {
         const err = error as ZenRowsCrawlError;
         expect(err.status).toBe(422);
         expect(err.code).toBe("invalid_parameter");
-        expect(err.problem?.detail).toBe("Invalid parameter.");
+        expect(err.detail).toBe("Invalid parameter.");
         return true;
       },
     );
   });
 
-  test("429 too_many_crawls is not retried without an Idempotency-Key and carries retryAfter", async () => {
-    let calls = 0;
-    server.use(
-      http.post(`${BASE}/crawls`, () => {
-        calls += 1;
-        return problem(429, "too_many_crawls", "Too many crawls", { "Retry-After": "30" });
-      }),
-    );
-    const retrying = new ZenRowsCrawlClient("API_KEY");
-    await expect(retrying.create({ url: "https://example.com/", depth: 1 })).rejects.toSatisfy(
-      (error: unknown) => {
+  test.each([undefined, "idem-1"])(
+    "429 too_many_crawls is never retried on create (Idempotency-Key %s) and carries retryAfter",
+    async (idempotencyKey) => {
+      let calls = 0;
+      server.use(
+        http.post(`${BASE}/crawls`, () => {
+          calls += 1;
+          return problem(429, "too_many_crawls", "Too many crawls", { "Retry-After": "30" });
+        }),
+      );
+      const retrying = new ZenRowsCrawlClient("API_KEY");
+      await expect(
+        retrying.create({ url: "https://example.com/", depth: 1 }, { idempotencyKey }),
+      ).rejects.toSatisfy((error: unknown) => {
         const err = error as ZenRowsCrawlError;
         expect(err.status).toBe(429);
         expect(err.code).toBe("too_many_crawls");
         expect(err.retryAfter).toBe(30);
         return true;
-      },
+      });
+      expect(calls).toBe(1);
+    },
+  );
+
+  test("a keyed create retries a 503", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls`, () => {
+        calls += 1;
+        if (calls === 1)
+          return problem(503, "internal_error", "Unavailable", { "Retry-After": "0" });
+        return HttpResponse.json(crawl({ status: "running" }), { status: 202 });
+      }),
     );
-    expect(calls).toBe(1);
+    const retrying = new ZenRowsCrawlClient("API_KEY");
+    const created = await retrying.create(
+      { url: "https://example.com/", depth: 1 },
+      { idempotencyKey: "idem-1" },
+    );
+    expect(created.status).toBe("running");
+    expect(calls).toBe(2);
+  });
+
+  test("code is undefined when the problem body has none", async () => {
+    server.use(
+      http.get(`${BASE}/crawls/c_1`, () =>
+        HttpResponse.json({ title: "Bad Gateway", status: 502 }, { status: 502 }),
+      ),
+    );
+    await expect(client.get("c_1")).rejects.toSatisfy((error: unknown) => {
+      const err = error as ZenRowsCrawlError;
+      expect(err.status).toBe(502);
+      expect(err.code).toBeUndefined();
+      return true;
+    });
   });
 
   test("403 REQS008 says Crawl is not enabled for this account", async () => {
@@ -318,6 +398,13 @@ describe("ZenRowsCrawlClient — errors", () => {
 });
 
 describe("ZenRowsCrawlClient — wait", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   test("polls with limit=1 until the crawl ends, and returns it without results", async () => {
     let polls = 0;
     const limits: (string | null)[] = [];
@@ -335,8 +422,9 @@ describe("ZenRowsCrawlClient — wait", () => {
         );
       }),
     );
-    const client = new ZenRowsCrawlClient("API_KEY");
-    const ended = await client.wait("c_1", { pollInterval: 0.01, maxPollInterval: 0.01 });
+    const waiting = new ZenRowsCrawlClient("API_KEY").wait("c_1");
+    await vi.advanceTimersByTimeAsync(10_000);
+    const ended = await waiting;
     expect(ended.status).toBe("completed");
     expect(ended).not.toHaveProperty("results");
     expect(ended).not.toHaveProperty("next_cursor");
@@ -356,19 +444,37 @@ describe("ZenRowsCrawlClient — wait", () => {
     expect(ended.error?.code).toBe("seed_unreachable");
   });
 
-  test("throws WaiterTimeoutError when the crawl keeps running", async () => {
+  test("returns the running crawl once the timeout runs out", async () => {
+    let polls = 0;
+    server.use(
+      http.get(`${BASE}/crawls/c_1`, () => {
+        polls += 1;
+        return HttpResponse.json(crawl({ status: "running", next_cursor: "c" }));
+      }),
+    );
+    const waiting = new ZenRowsCrawlClient("API_KEY").wait("c_1", { timeout: 5 });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const crawled = await waiting;
+    expect(crawled.status).toBe("running");
+    expect(crawled).not.toHaveProperty("results");
+    expect(polls).toBeGreaterThan(1);
+  });
+
+  test("defaults to a 600 s timeout", async () => {
     server.use(
       http.get(`${BASE}/crawls/c_1`, () =>
         HttpResponse.json(crawl({ status: "running", next_cursor: "c" })),
       ),
     );
-    await expect(
-      new ZenRowsCrawlClient("API_KEY").wait("c_1", {
-        timeout: 0.05,
-        pollInterval: 0.01,
-        maxPollInterval: 0.01,
-      }),
-    ).rejects.toBeInstanceOf(WaiterTimeoutError);
+    let settled = false;
+    const waiting = new ZenRowsCrawlClient("API_KEY").wait("c_1").then((c) => {
+      settled = true;
+      return c;
+    });
+    await vi.advanceTimersByTimeAsync(590_000);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await waiting).status).toBe("running");
   });
 });
 
@@ -377,5 +483,11 @@ describe("ZenRows.crawl", () => {
     const client = new ZenRows("API_KEY");
     expect(client.crawl).toBeInstanceOf(ZenRowsCrawlClient);
     expect(client.crawl.apiKey).toBe("API_KEY");
+  });
+
+  test("takes its config from the crawl option", async () => {
+    server.use(http.get("https://example.com/v1/crawls/c_1", () => HttpResponse.json(crawl())));
+    const client = new ZenRows("API_KEY", { crawl: { baseURL: "https://example.com/v1" } });
+    expect((await client.crawl.get("c_1")).crawl_id).toBe("c_1");
   });
 });
