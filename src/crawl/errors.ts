@@ -1,18 +1,23 @@
 import type { ProblemJson } from "../batch/types.js";
 
-/** The API's code for an account Crawl is not enabled on (403). */
+/**
+ * The API's code for an account Crawl is not enabled on (403).
+ * @beta
+ */
 export const CRAWL_NOT_ENABLED_CODE = "REQS008";
 
 /**
  * A non-2xx response from the Crawl API, decoded as RFC 9457 `application/problem+json`
  * where possible. Branch on `status` and `code` (e.g. `crawl_not_found`, `too_many_crawls`,
- * or `REQS008` when Crawl is not enabled for the account); `code` defaults to
- * `"internal"` when the body wasn't valid Problem JSON.
+ * or `REQS008` when Crawl is not enabled for the account); `code` is undefined when the body
+ * has none.
+ * @beta
  */
 export class ZenRowsCrawlError extends Error {
   readonly status: number;
   readonly problem: ProblemJson | undefined;
-  readonly code: string;
+  readonly code: string | undefined;
+  readonly detail: string | undefined;
   readonly extras: Record<string, unknown> | undefined;
   /** Seconds from the `Retry-After` header, e.g. 30 on a 429 `too_many_crawls`. */
   readonly retryAfter: number | undefined;
@@ -35,7 +40,8 @@ export class ZenRowsCrawlError extends Error {
     this.name = "ZenRowsCrawlError";
     this.status = status;
     this.problem = problem;
-    this.code = problem?.code ?? "internal";
+    this.code = problem?.code;
+    this.detail = problem?.detail;
     this.extras = extras;
     this.retryAfter = retryAfter;
   }

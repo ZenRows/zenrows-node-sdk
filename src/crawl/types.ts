@@ -1,28 +1,35 @@
 import type { Extensible } from "../batch/types.js";
 
-/** `running` until the crawl ends; the other three are terminal. */
+/** `running` until the crawl ends; the other three are terminal. @beta */
 export type CrawlStatus = "running" | "completed" | "stopped" | "failed";
-/** What ended a crawl early: a limit (`status: completed`) or `stop()` (`status: stopped`). */
+/** What ended a crawl early: a limit (`status: completed`) or `stop()` (`status: stopped`). @beta */
 export type CrawlStopReason = "max_items" | "max_pages" | "user";
-/** Why a crawl failed (`status: failed`). */
-export type CrawlErrorCode = "insufficient_credits" | "seed_unreachable" | "no_items_found";
-/** Where a kept URL's page stands, when the crawl has an `output_format`. */
+/** Why a crawl failed (`status: failed`). @beta */
+export type CrawlErrorCode =
+  | "insufficient_credits"
+  | "seed_unreachable"
+  | "domain_not_allowed"
+  | "no_items_found"
+  | "internal_error";
+/** Where a kept URL's page stands, when the crawl has an `output_format`. @beta */
 export type CrawlContentStatus = "pending" | "fetched" | "failed";
-/** Return each kept URL's page as fetched. Absent means URLs only. */
+/** Return each kept URL's page as fetched. Absent means URLs only. @beta */
 export type CrawlOutputFormat = "html";
 
+/** @beta */
 export interface CrawlCoverage {
   pages_fetched: number;
   pages_failed: number;
   items_found: number;
 }
 
-/** Why a crawl failed. Part of the crawl, not an error response. */
+/** Why a crawl failed. Part of the crawl, not an error response. @beta */
 export interface CrawlRunError {
   code: Extensible<CrawlErrorCode>;
   detail: string;
 }
 
+/** @beta */
 export interface Crawl {
   crawl_id: string;
   status: Extensible<CrawlStatus>;
@@ -42,6 +49,7 @@ export interface Crawl {
   finished_at?: string;
 }
 
+/** @beta */
 export interface CrawlResult {
   url: string;
   content_status?: Extensible<CrawlContentStatus>;
@@ -49,19 +57,21 @@ export interface CrawlResult {
   content_url?: string;
 }
 
+/** @beta */
 export interface CrawlWithResults extends Crawl {
   results: CrawlResult[];
   /** Never null while the crawl runs; null once it ended and this page holds its last URLs. */
   next_cursor: string | null;
 }
 
+/** @beta */
 export interface CrawlList {
   crawls: Crawl[];
   /** Absent on the last page. */
   next_cursor?: string;
 }
 
-/** What `stop()` returns: where the crawl stands, without counts. */
+/** What `stop()` returns: where the crawl stands, without counts. @beta */
 export interface CrawlStop {
   crawl_id: string;
   status: Extensible<CrawlStatus>;
@@ -70,10 +80,20 @@ export interface CrawlStop {
   finished_at?: string;
 }
 
-/** One line of a crawl's download. */
+/** One line of a crawl's download. @beta */
 export interface CrawlExportLine {
   url: string;
   content_status?: Extensible<CrawlContentStatus>;
-  /** The page HTML, present when `content_status` is `fetched`. */
-  content?: string;
+  /** The page, present when `content_status` is `fetched`: HTML text, or an object for a JSON crawl. */
+  content?: string | Record<string, unknown>;
+}
+
+/** What `download()` returns. @beta */
+export interface CrawlDownload {
+  /**
+   * The crawl's status when the file was read (`X-Crawl-Status`; undefined without it).
+   * `running` means a later download may hold more lines.
+   */
+  status: Extensible<CrawlStatus> | undefined;
+  lines: AsyncIterable<CrawlExportLine>;
 }

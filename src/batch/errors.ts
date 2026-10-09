@@ -12,14 +12,15 @@ export class ZenRowsBatchError extends Error {
   readonly extras: Record<string, unknown> | undefined;
 
   constructor(status: number, problem: ProblemJson | undefined, extras?: Record<string, unknown>) {
+    const code = problem?.code ?? "internal";
     const message = problem
-      ? `${status} ${problem.title ?? "Error"}: ${problem.detail ?? problem.code ?? "unknown"}`
+      ? `${status} ${problem.title ?? "Error"}: ${problem.detail ?? code}`
       : `${status} (no problem body)`;
     super(message);
     this.name = "ZenRowsBatchError";
     this.status = status;
     this.problem = problem;
-    this.code = problem?.code ?? "internal";
+    this.code = code;
     this.extras = extras;
   }
 }
@@ -54,7 +55,7 @@ export async function parseProblem(
     type: typeof record.type === "string" ? record.type : "about:blank",
     title: typeof record.title === "string" ? record.title : "Error",
     status: typeof record.status === "number" ? record.status : response.status,
-    code: typeof record.code === "string" ? record.code : "internal",
+    code: typeof record.code === "string" ? record.code : undefined,
     detail: typeof record.detail === "string" ? record.detail : undefined,
     instance: typeof record.instance === "string" ? record.instance : undefined,
   };

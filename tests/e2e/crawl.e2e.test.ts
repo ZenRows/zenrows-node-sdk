@@ -1,6 +1,5 @@
-// End-to-end test against a live Crawl API. Skipped unless ZENROWS_API_KEY,
-// ZENROWS_CRAWL_BASE_URL and ZENROWS_E2E_CRAWL_URL are set, so `pnpm test` stays hermetic.
-// Run with `pnpm test:e2e`.
+// End-to-end test against a live Crawl API. Skipped unless ZENROWS_API_KEY and
+// ZENROWS_E2E_CRAWL_URL are set, so `pnpm test` stays hermetic. Run with `pnpm test:e2e`.
 import { beforeAll, describe, expect, test } from "vitest";
 import { ZenRowsCrawlClient } from "../../src/crawl/client";
 import { ZenRowsCrawlError } from "../../src/crawl/errors";
@@ -8,7 +7,7 @@ import type { Crawl, CrawlResult } from "../../src/crawl/types";
 import { server } from "../_setup";
 
 const apiKey = process.env.ZENROWS_API_KEY;
-const baseURL = process.env.ZENROWS_CRAWL_BASE_URL;
+const baseURL = process.env.ZENROWS_CRAWL_BASE_URL || "https://api.zenrows.com/v1";
 const startURL = process.env.ZENROWS_E2E_CRAWL_URL;
 const include = process.env.ZENROWS_E2E_CRAWL_INCLUDE || undefined;
 
@@ -19,7 +18,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-describe.skipIf(!apiKey || !baseURL || !startURL)("Crawl e2e", () => {
+describe.skipIf(!apiKey || !startURL)("Crawl e2e", () => {
   const client = new ZenRowsCrawlClient(apiKey ?? "", { baseURL });
   let ended: Crawl;
   let results: CrawlResult[];
@@ -48,9 +47,9 @@ describe.skipIf(!apiKey || !baseURL || !startURL)("Crawl e2e", () => {
       }
     }
     console.log(`created ${created.crawl_id} (${created.status})`);
-    ended = await client.wait(created.crawl_id, { timeout: 600 });
+    ended = await client.wait(created.crawl_id);
     results = [];
-    for await (const result of client.iterResults(ended.crawl_id)) results.push(result);
+    for await (const result of client.results(ended.crawl_id)) results.push(result);
     console.log(
       `ended ${ended.crawl_id}: ${ended.status}, ${results.length} results, coverage ${JSON.stringify(ended.coverage)}`,
     );
@@ -65,25 +64,21 @@ describe.skipIf(!apiKey || !baseURL || !startURL)("Crawl e2e", () => {
   test("a fetched result's content is HTML", async () => {
     const fetched = results.find((r) => r.content_status === "fetched");
     expect(fetched).toBeDefined();
-    const html = await client.getContent(ended.crawl_id, fetched as CrawlResult);
+    const html = await client.content(ended.crawl_id, fetched as CrawlResult);
     expect(html.toLowerCase()).toMatch(/<html|<!doctype html/);
   }, 60_000);
 
-  test("the download has one line per result", async () => {
+  test("the download has the crawl's status and one line per result", async () => {
+    const download = await client.download(ended.crawl_id);
+    expect(download.status).toBe(ended.status);
     const lines = [];
-    for await (const line of client.download(ended.crawl_id)) lines.push(line);
+    for await (const line of download.lines) lines.push(line);
     expect(lines.length).toBe(results.length);
   }, 60_000);
 
-  test("the crawl is listed", async () => {
-    let found = false;
-    for await (const crawl of client.iterCrawls({ limit: 100 })) {
-      if (crawl.crawl_id === ended.crawl_id) {
-        found = true;
-        break;
-      }
-    }
-    expect(found).toBe(true);
+  test("the crawl is on the first page of the list", async () => {
+    const page = await client.list({ limit: 100 });
+    expect(page.crawls.map((c) => c.crawl_id)).toContain(ended.crawl_id);
   }, 60_000);
 
   test("stop on an ended crawl answers with its terminal status", async () => {
