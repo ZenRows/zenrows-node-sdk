@@ -72,7 +72,7 @@ export class ZenRows {
   readonly fetchWithRetry;
   /** Client for the Batch API (async job/run/task model) — see `./batch.ts`. */
   readonly batch: ZenRowsBatchClient;
-  /** Client for the Crawl API (beta; one start URL in, the URLs behind it out). See `./crawl/client.ts`. */
+  /** Client for the Crawl API (new; one start URL in, the URLs behind it out). See `./crawl/client.ts`. */
   readonly crawl: ZenRowsCrawlClient;
 
   constructor(apiKey: string, clientConfig: ClientConfig = {}) {

@@ -2,7 +2,6 @@ import type { ProblemJson } from "../batch/types.js";
 
 /**
  * The API's code for an account Crawl is not enabled on (403).
- * @beta
  */
 export const CRAWL_NOT_ENABLED_CODE = "REQS008";
 
@@ -11,7 +10,6 @@ export const CRAWL_NOT_ENABLED_CODE = "REQS008";
  * where possible. Branch on `status` and `code` (e.g. `crawl_not_found`, `too_many_crawls`,
  * or `REQS008` when Crawl is not enabled for the account); `code` is undefined when the body
  * has none.
- * @beta
  */
 export class ZenRowsCrawlError extends Error {
   readonly status: number;
