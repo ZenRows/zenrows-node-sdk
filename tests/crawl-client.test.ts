@@ -182,13 +182,14 @@ describe("ZenRowsCrawlClient — requests", () => {
     expect(stopped).toEqual({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
   });
 
-  test("content takes a content id or a result's content_url", async () => {
+  test("content takes a content id, a content_url or a result", async () => {
     server.use(
       http.get(`${BASE}/crawls/c_1/contents/ct_9`, () =>
         HttpResponse.text("<html>page</html>", { headers: { "Content-Type": "text/html" } }),
       ),
     );
     expect(await client.content("c_1", "ct_9")).toBe("<html>page</html>");
+    expect(await client.content("c_1", "/v1/crawls/c_1/contents/ct_9")).toBe("<html>page</html>");
     expect(
       await client.content("c_1", {
         url: "https://example.com/product/a",
@@ -212,6 +213,9 @@ describe("ZenRowsCrawlClient — requests", () => {
         content_url: "/v1/crawls/c_1/contents/",
       }),
     ).rejects.toBeInstanceOf(TypeError);
+    await expect(client.content("c_1", "/v1/crawls/c_1/contents/")).rejects.toBeInstanceOf(
+      TypeError,
+    );
   });
 
   test("download returns X-Crawl-Status and one parsed object per NDJSON line, across chunks", async () => {

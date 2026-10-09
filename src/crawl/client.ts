@@ -1,5 +1,4 @@
 import { BatchTransport } from "../batch/transport.js";
-import { WaiterTimeoutError, pollUntil } from "../batch/waiters.js";
 import { crawlError } from "./errors.js";
 import type {
   Crawl,
@@ -17,6 +16,7 @@ const DEFAULT_TIMEOUT_SECONDS = 30;
 const DEFAULT_WAIT_TIMEOUT_SECONDS = 600;
 const POLL_INTERVAL_SECONDS = 2;
 const MAX_POLL_INTERVAL_SECONDS = 15;
+const POLL_BACKOFF = 1.5;
 // 429 `too_many_crawls` is a capacity limit: a retry only waits for a slot the caller may never get.
 const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
@@ -55,14 +55,16 @@ export interface WaitForCrawlOptions {
 }
 
 function contentIdOf(content: string | CrawlResult): string {
-  if (typeof content === "string") return content;
-  if (!content.content_url) {
+  let ref: string;
+  if (typeof content === "string") ref = content;
+  else if (content.content_url) ref = content.content_url;
+  else {
     throw new TypeError(
       `content: result for ${content.url} has no content_url (content_status: ${content.content_status ?? "absent"})`,
     );
   }
-  const id = content.content_url.split("/").pop();
-  if (!id) throw new TypeError(`content: cannot read a content id from ${content.content_url}`);
+  const id = ref.split("/").pop();
+  if (!id) throw new TypeError(`content: cannot read a content id from ${ref}`);
   return id;
 }
 
@@ -168,9 +170,9 @@ export class ZenRowsCrawlClient {
   }
 
   /**
-   * One kept URL's page as fetched (HTML). Pass the content id, or the `CrawlResult` itself
-   * (its `content_url` names the content; present once `content_status` is `fetched`).
-   * Throws `TypeError` for a result without a usable `content_url`.
+   * One kept URL's page as fetched (HTML). Pass the content id, a `content_url`, or the
+   * `CrawlResult` itself (its `content_url` is present once `content_status` is `fetched`).
+   * Throws `TypeError` when no content id can be read.
    */
   async content(crawlId: string, content: string | CrawlResult): Promise<string> {
     return this.transport.requestText(
@@ -201,23 +203,21 @@ export class ZenRowsCrawlClient {
    * returned with status `running` and keeps running.
    */
   async wait(crawlId: string, options: WaitForCrawlOptions = {}): Promise<Crawl> {
-    let latest: CrawlWithResults | undefined;
-    try {
+    const deadline = Date.now() + (options.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS) * 1000;
+    let interval = POLL_INTERVAL_SECONDS;
+    let latest: CrawlWithResults;
+    while (true) {
       // `limit: 1` keeps each poll cheap; the one result it reads is dropped.
-      const poll = async () => {
-        latest = await this.get(crawlId, { limit: 1 });
-        return latest;
-      };
-      await pollUntil(poll, {
-        isDone: (c) => c.status !== "running",
-        timeout: options.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS,
-        initialInterval: POLL_INTERVAL_SECONDS,
-        maxInterval: MAX_POLL_INTERVAL_SECONDS,
-      });
-    } catch (error) {
-      if (!(error instanceof WaiterTimeoutError)) throw error;
+      latest = await this.get(crawlId, { limit: 1 });
+      const remaining = deadline - Date.now();
+      if (latest.status !== "running" || remaining <= 0) break;
+      const jitter = 0.8 + Math.random() * 0.4;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(interval * 1000 * jitter, remaining)),
+      );
+      interval = Math.min(interval * POLL_BACKOFF, MAX_POLL_INTERVAL_SECONDS);
     }
-    const { results: _results, next_cursor: _cursor, ...crawl } = latest as CrawlWithResults;
+    const { results: _results, next_cursor: _cursor, ...crawl } = latest;
     return crawl;
   }
 }

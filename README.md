@@ -320,7 +320,7 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code`, `detail` and `retryAft
 - `422` `invalid_parameter` / `invalid_start_url` / `domain_not_allowed`: `detail` names the problem. `422` `idempotency_key_reused`: the key was used with a different body. Use a new key or no key; do not retry as is.
 - `429` `too_many_crawls`: the account has reached its limit of active jobs (3 by default), shared with its Batch jobs. Nothing was created. `create()` never retries it; retry after `error.retryAfter` seconds.
 
-`content()` throws a `TypeError` when you pass a result without a usable `content_url`. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
+`content()` takes a content id, a `content_url` or a result, and throws a `TypeError` when it cannot read a content id from it. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
 
 `outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`. A download line's `content` is a string, or an object for a crawl that returns JSON.
 
