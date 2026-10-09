@@ -1,5 +1,5 @@
-import { BatchTransport } from "../batch/transport.js";
-import { crawlError } from "./errors.js";
+import { BatchTransport, DEFAULT_RETRIES } from "../batch/transport.js";
+import { ZenRowsCrawlError, crawlError } from "./errors.js";
 import type {
   Crawl,
   CrawlDownload,
@@ -19,11 +19,16 @@ const MAX_POLL_INTERVAL_SECONDS = 15;
 const POLL_BACKOFF = 1.5;
 // 429 `too_many_crawls` is a capacity limit: a retry only waits for a slot the caller may never get.
 const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
+// 503 `crawl_busy` on stop: nothing was saved and the crawl is still running, so the stop is safe to repeat.
+const CRAWL_BUSY = "crawl_busy";
 
 export interface CrawlClientConfig {
   /** Override the Crawl API base URL. Default `https://api.zenrows.com/v1`. */
   baseURL?: string;
-  /** Retries for transient failures (502/503/504, network errors, 429 on reads) on idempotent requests. Default 3. */
+  /**
+   * Retries for transient failures (502/503/504, network errors, 429 on reads) on idempotent
+   * requests, and for a `stop()` answered 503 `crawl_busy`. Default 3.
+   */
   retries?: number;
   /** Seconds each HTTP request may take. Default 30. Does not limit reading a `download()` body. */
   timeout?: number;
@@ -95,9 +100,11 @@ async function* ndjsonLines(
 export class ZenRowsCrawlClient {
   readonly apiKey: string;
   private readonly transport: BatchTransport;
+  private readonly retries: number;
 
   constructor(apiKey: string, config: CrawlClientConfig = {}) {
     this.apiKey = apiKey;
+    this.retries = config.retries ?? DEFAULT_RETRIES;
     this.transport = new BatchTransport(
       (config.baseURL ?? DEFAULT_CRAWL_API_URL).replace(/\/+$/, ""),
       apiKey,
@@ -161,9 +168,31 @@ export class ZenRowsCrawlClient {
     }
   }
 
-  /** Stop a running crawl. Idempotent: a crawl that already ended answers as it ended. */
-  stop(crawlId: string): Promise<CrawlStop> {
-    return this.transport.requestJson("POST", `/crawls/${encodeURIComponent(crawlId)}/stop`);
+  /**
+   * Stop a running crawl. Idempotent: a crawl that already ended answers as it ended.
+   * A 503 `crawl_busy` means the stop was not saved and the crawl is still running: `stop()`
+   * retries it up to `retries` times, waiting `Retry-After` seconds each time, then throws it.
+   */
+  async stop(crawlId: string): Promise<CrawlStop> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.transport.requestJson<CrawlStop>(
+          "POST",
+          `/crawls/${encodeURIComponent(crawlId)}/stop`,
+        );
+      } catch (error) {
+        if (
+          !(error instanceof ZenRowsCrawlError) ||
+          error.status !== 503 ||
+          error.code !== CRAWL_BUSY ||
+          attempt >= this.retries
+        ) {
+          throw error;
+        }
+        const waitSeconds = error.retryAfter ?? 1;
+        await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+      }
+    }
   }
 
   /**

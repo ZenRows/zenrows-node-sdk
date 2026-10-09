@@ -401,6 +401,75 @@ describe("ZenRowsCrawlClient — errors", () => {
   });
 });
 
+describe("ZenRowsCrawlClient — stop on 503 crawl_busy", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const busy = () => problem(503, "crawl_busy", "Crawl busy", { "Retry-After": "1" });
+
+  test("retries after Retry-After and returns the stopped crawl", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        if (calls === 1) return busy();
+        return HttpResponse.json({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
+      }),
+    );
+    let settled = false;
+    const stopping = new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1").finally(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(900);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(200);
+    expect((await stopping).status).toBe("stopped");
+    expect(calls).toBe(2);
+  });
+
+  test("throws crawl_busy once the retries run out", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        return busy();
+      }),
+    );
+    const stopping = expect(
+      new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1"),
+    ).rejects.toSatisfy((error: unknown) => {
+      const err = error as ZenRowsCrawlError;
+      expect(err).toBeInstanceOf(ZenRowsCrawlError);
+      expect(err.status).toBe(503);
+      expect(err.code).toBe("crawl_busy");
+      return true;
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopping;
+    expect(calls).toBe(3);
+  });
+
+  test("does not retry another 503", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        return problem(503, "internal_error", "Unavailable", { "Retry-After": "1" });
+      }),
+    );
+    const stopping = expect(
+      new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1"),
+    ).rejects.toBeInstanceOf(ZenRowsCrawlError);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopping;
+    expect(calls).toBe(1);
+  });
+});
+
 describe("ZenRowsCrawlClient — wait", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });

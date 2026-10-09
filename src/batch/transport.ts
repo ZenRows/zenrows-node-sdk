@@ -7,7 +7,7 @@ const IDEMPOTENT_METHODS = new Set(["GET", "PUT", "DELETE", "HEAD", "OPTIONS"]);
 
 const BACKOFF_BASE_MS = 250;
 const BACKOFF_CAP_MS = 10_000;
-const DEFAULT_RETRIES = 3;
+export const DEFAULT_RETRIES = 3;
 
 function isIdempotent(method: string, hasIdempotencyKey: boolean): boolean {
   return (
