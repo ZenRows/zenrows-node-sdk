@@ -20,7 +20,6 @@ const POLL_BACKOFF = 1.5;
 // 429 `too_many_crawls` is a capacity limit: a retry only waits for a slot the caller may never get.
 const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 
-/** @beta */
 export interface CrawlClientConfig {
   /** Override the Crawl API base URL. Default `https://api.zenrows.com/v1`. */
   baseURL?: string;
@@ -30,7 +29,6 @@ export interface CrawlClientConfig {
   timeout?: number;
 }
 
-/** @beta */
 export interface CreateCrawlParams {
   /** The page the crawl starts from: an absolute public `http`/`https` URL. */
   url: string;
@@ -48,7 +46,6 @@ export interface CreateCrawlParams {
   outputFormat?: CrawlOutputFormat;
 }
 
-/** @beta */
 export interface WaitForCrawlOptions {
   /** Seconds to poll before returning the crawl as it stands. Default 600. */
   timeout?: number;
@@ -89,11 +86,11 @@ async function* ndjsonLines(
 }
 
 /**
- * Client for the Zenrows Crawl API (beta): give it one start URL, read back the URLs behind it.
+ * Client for the Zenrows Crawl API (new): give it one start URL, read back the URLs behind it.
  * Usable standalone (`new ZenRowsCrawlClient(apiKey)`) or via `client.crawl` on a `ZenRows`
  * instance. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it
  * ends, and `results()` / `download()` read what it kept.
- * @beta
+ * Crawl is still evolving: new features are coming, limits may be tuned, and the changelog announces each change.
  */
 export class ZenRowsCrawlClient {
   readonly apiKey: string;

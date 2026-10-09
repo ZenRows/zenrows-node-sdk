@@ -269,7 +269,9 @@ const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenro
 
 ### Crawl
 
-[Crawl](https://docs.zenrows.com/crawl/introduction) (beta) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
+[Crawl](https://docs.zenrows.com/crawl/introduction) (new) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
+
+Crawl is still evolving: new features are coming, limits may be tuned, and the changelog announces each change.
 
 ```javascript
 const { ZenRows } = require("zenrows");
