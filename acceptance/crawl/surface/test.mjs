@@ -534,24 +534,23 @@ await liveCheck(
   "content by content id, then by content_url: the same HTML",
   async () => {
     if (!B) return { status: SKIP, actual: "no html crawl" };
-    let r;
-    for await (const x of client.results(B.crawl_id)) {
-      if (x.content_url) {
-        r = x;
-        break;
-      }
+    const firstFetched = async (id) => {
+      for await (const x of client.results(id)) if (x.content_url) return x;
+    };
+    // The stop in check 20 can land before any page is fetched. Then read a
+    // one-item html crawl that runs to the end instead.
+    let src = B.crawl_id;
+    let r = await firstFetched(src);
+    if (!r) {
+      const own = await create({ ...base, maxItems: 1, outputFormat: "html" });
+      await client.wait(own.crawl_id);
+      src = own.crawl_id;
+      r = await firstFetched(src);
     }
-    if (!r)
-      return stopInfo?.status === "stopped"
-        ? {
-            status: SKIP,
-            actual:
-              "the stop cancelled every page fetch, so no page has content to read (see check 20)",
-          }
-        : { status: FAIL, actual: "no result with content_url" };
+    if (!r) return { status: FAIL, actual: `no result with content_url on ${src}` };
     const id = r.content_url.split("/").pop();
-    const byId = await client.content(B.crawl_id, id);
-    const byUrl = await client.content(B.crawl_id, r.content_url);
+    const byId = await client.content(src, id);
+    const byUrl = await client.content(src, r.content_url);
     const ok = byId === byUrl && /<html|<!doctype/i.test(byId);
     return {
       status: passIf(ok),
