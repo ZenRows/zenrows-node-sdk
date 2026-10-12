@@ -21,6 +21,8 @@ const POLL_BACKOFF = 1.5;
 const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
 // 503 `crawl_busy` on stop: nothing was saved and the crawl is still running, so the stop is safe to repeat.
 const CRAWL_BUSY = "crawl_busy";
+// The longest a crawl_busy Retry-After may make a stop wait, so a large server value cannot hang it.
+const MAX_STOP_RETRY_AFTER_SECONDS = 30;
 
 export interface CrawlClientConfig {
   /** Override the Crawl API base URL. Default `https://api.zenrows.com/v1`. */
@@ -171,7 +173,7 @@ export class ZenRowsCrawlClient {
   /**
    * Stop a running crawl. Idempotent: a crawl that already ended answers as it ended.
    * A 503 `crawl_busy` means the stop was not saved and the crawl is still running: `stop()`
-   * retries it up to `retries` times, waiting `Retry-After` seconds each time, then throws it.
+   * retries it up to `retries` times, waiting `Retry-After` seconds (at most 30) each time, then throws it.
    */
   async stop(crawlId: string): Promise<CrawlStop> {
     for (let attempt = 0; ; attempt += 1) {
@@ -189,7 +191,7 @@ export class ZenRowsCrawlClient {
         ) {
           throw error;
         }
-        const waitSeconds = error.retryAfter ?? 1;
+        const waitSeconds = Math.min(error.retryAfter ?? 1, MAX_STOP_RETRY_AFTER_SECONDS);
         await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
       }
     }
