@@ -7,6 +7,8 @@ const IDEMPOTENT_METHODS = new Set(["GET", "PUT", "DELETE", "HEAD", "OPTIONS"]);
 
 const BACKOFF_BASE_MS = 250;
 const BACKOFF_CAP_MS = 10_000;
+// A Retry-After above this waits only this long, so a large server value cannot hang a call.
+const RETRY_AFTER_CAP_MS = 30_000;
 const DEFAULT_RETRIES = 3;
 
 function isIdempotent(method: string, hasIdempotencyKey: boolean): boolean {
@@ -27,7 +29,7 @@ function retryAfterMs(response: Response): number | undefined {
   if (!raw) return undefined;
   const secs = Number(raw);
   if (Number.isNaN(secs) || secs < 0) return undefined;
-  return secs * 1000;
+  return Math.min(secs * 1000, RETRY_AFTER_CAP_MS);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -69,7 +71,7 @@ function deadline(ms: number | undefined): { signal?: AbortSignal; clear(): void
  * Thin HTTP transport for the Batch API: `X-API-Key` auth, retries for transient failures
  * (429/502/503/504 + network errors) on idempotent requests only, and RFC 7807 → `ZenRowsBatchError`
  * mapping. Mirrors the Python SDK's `_transport.py` exactly (250ms · 2^attempt backoff, ±20%
- * jitter, capped at 10s, honors `Retry-After`).
+ * jitter, capped at 10s, honors `Retry-After` up to 30s).
  */
 export class BatchTransport {
   constructor(
