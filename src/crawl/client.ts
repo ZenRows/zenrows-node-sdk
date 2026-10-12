@@ -171,10 +171,10 @@ export class ZenRowsCrawlClient {
    * `CrawlResult` itself (its `content_url` is present once `content_status` is `fetched`).
    * Throws `TypeError` when no content id can be read.
    */
-  async content(crawlId: string, content: string | CrawlResult): Promise<string> {
+  async content(crawlId: string, contentId: string | CrawlResult): Promise<string> {
     return this.transport.requestText(
       "GET",
-      `/crawls/${encodeURIComponent(crawlId)}/contents/${encodeURIComponent(contentIdOf(content))}`,
+      `/crawls/${encodeURIComponent(crawlId)}/contents/${encodeURIComponent(contentIdOf(contentId))}`,
     );
   }
 
