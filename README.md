@@ -282,7 +282,7 @@ const apiKey = "YOUR-API-KEY";
   const client = new ZenRows(apiKey);
 
   const crawl = await client.crawl.create({
-    url: "https://example.com/products/",
+    url: "https://www.scrapingcourse.com/ecommerce/",
     depth: 1, // link hops from the start URL
     maxItems: 10, // stop once this many URLs are kept
     maxPages: 20, // stop once this many pages are fetched; bounds the cost
@@ -426,7 +426,7 @@ Before opening a pull request, run `pnpm check` and `pnpm test -- --run`. Neithe
 
 ```bash
 export ZENROWS_API_KEY="$(cat path/to/key-file)"
-export ZENROWS_E2E_CRAWL_URL=https://example.com/products/
+export ZENROWS_E2E_CRAWL_URL=https://www.scrapingcourse.com/ecommerce/
 export ZENROWS_E2E_CRAWL_INCLUDE=/product/
 pnpm test:e2e
 ```

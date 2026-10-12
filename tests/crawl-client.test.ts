@@ -581,3 +581,30 @@ describe("ZenRows.crawl", () => {
     expect((await client.crawl.get("c_1")).crawl_id).toBe("c_1");
   });
 });
+
+describe("ZenRowsCrawlClient — Retry-After", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a Retry-After above 30 seconds waits 30 seconds", async () => {
+    let calls = 0;
+    server.use(
+      http.get(`${BASE}/crawls/c_1`, () => {
+        calls += 1;
+        if (calls === 1)
+          return problem(429, "rate_limited", "Slow down", { "Retry-After": "3600" });
+        return HttpResponse.json(crawl({ status: "completed", results: [], next_cursor: null }));
+      }),
+    );
+    const reading = new ZenRowsCrawlClient("API_KEY").get("c_1");
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await reading).status).toBe("completed");
+    expect(calls).toBe(2);
+  });
+});
