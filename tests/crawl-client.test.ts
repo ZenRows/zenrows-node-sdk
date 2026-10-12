@@ -278,6 +278,45 @@ describe("ZenRowsCrawlClient — requests", () => {
     for await (const line of download.lines) got.push(line);
     expect(got).toEqual([{ url: "u1" }]);
   });
+
+  // These two stub fetch: msw neither aborts a returned body nor passes a cancel through.
+  describe("transport", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    test("the timeout covers reading a download error body", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+        const body = new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+          },
+        });
+        return new Response(body, { status: 404 });
+      });
+      const quick = new ZenRowsCrawlClient("API_KEY", { timeout: 0.02, retries: 0 });
+      await expect(quick.download("c_1")).rejects.toSatisfy((error: unknown) => {
+        const err = error as ZenRowsCrawlError;
+        expect(err.status).toBe(404);
+        expect(err.problem).toBeUndefined();
+        return true;
+      });
+    });
+
+    test("a retried response's body is cancelled", async () => {
+      let cancelled = false;
+      const busy = new ReadableStream({
+        cancel() {
+          cancelled = true;
+        },
+      });
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValueOnce(new Response(busy, { status: 503, headers: { "Retry-After": "0" } }))
+        .mockResolvedValueOnce(Response.json(crawl()));
+      await client.get("c_1");
+      expect(cancelled).toBe(true);
+    });
+  });
 });
 
 describe("ZenRowsCrawlClient — errors", () => {

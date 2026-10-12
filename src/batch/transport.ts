@@ -79,7 +79,7 @@ export class BatchTransport {
     private readonly apiKey: string,
     private readonly retries: number = DEFAULT_RETRIES,
     private readonly errorFactory: ErrorFactory = batchError,
-    /** Milliseconds each attempt may take, body included; `requestRaw` stops at the headers. None by default. */
+    /** Milliseconds each attempt may take, body included; `requestRaw` stops at a 2xx's headers. None by default. */
     private readonly timeoutMs?: number,
   ) {}
 
@@ -105,12 +105,15 @@ export class BatchTransport {
 
   /**
    * Send a request and return the raw `Response`, for bodies read as a stream. The timeout
-   * stops once the headers arrive.
+   * stops once the headers of a 2xx arrive; an error body is still read within it.
    */
   async requestRaw(method: string, path: string, options: RequestOptions = {}): Promise<Response> {
     const { response, clear } = await this.send(method, path, options);
-    clear();
-    await this.throwUnlessOk(response);
+    try {
+      await this.throwUnlessOk(response);
+    } finally {
+      clear();
+    }
     return response;
   }
 
@@ -175,6 +178,8 @@ export class BatchTransport {
       }
 
       if (idempotent && attempt < this.retries && retryStatuses.has(response.status)) {
+        // An unread body holds its connection until garbage collection.
+        response.body?.cancel().catch(() => {});
         clear();
         const wait = retryAfterMs(response) ?? backoffMs(attempt);
         await sleep(wait);

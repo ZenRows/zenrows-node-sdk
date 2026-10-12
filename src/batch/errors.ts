@@ -19,7 +19,7 @@ export class ZenRowsBatchError extends Error {
     super(message);
     this.name = "ZenRowsBatchError";
     this.status = status;
-    this.problem = problem;
+    this.problem = problem && { ...problem, code };
     this.code = code;
     this.extras = extras;
   }
