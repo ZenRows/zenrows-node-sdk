@@ -722,6 +722,7 @@ H.naming({
     cursor: "cursor",
     limit: "limit",
     timeout: "timeout",
+    content_id: "contentId",
   },
 });
 record("17", "Naming", SKIP, "the API's names in this surface's casing", "computed by the report");
