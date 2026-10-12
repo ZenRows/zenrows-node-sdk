@@ -87,6 +87,27 @@ describe("ZenRowsCrawlClient — requests", () => {
     expect(body).toEqual({ url: "https://example.com/", depth: 2 });
   });
 
+  test("create without depth sends no depth, and a crawl without depth parses", async () => {
+    let body: unknown;
+    const { depth: _omitted, ...unbounded } = crawl({
+      status: "running",
+      max_items: 100,
+      max_pages: 100,
+    });
+    server.use(
+      http.post(`${BASE}/crawls`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(unbounded, { status: 202 });
+      }),
+    );
+    const created = await client.create({ url: "https://example.com/" });
+    expect(body).toEqual({ url: "https://example.com/" });
+    expect(created).not.toHaveProperty("depth");
+    expect(created.depth).toBeUndefined();
+    expect(created.max_pages).toBe(100);
+    expect(created.max_items).toBe(100);
+  });
+
   test("get passes cursor and limit, and parses results", async () => {
     let query: URLSearchParams | undefined;
     server.use(

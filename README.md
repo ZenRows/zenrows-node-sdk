@@ -269,7 +269,7 @@ const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenro
 
 ### Crawl
 
-[Crawl](https://docs.zenrows.com/crawl/introduction) (new) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
+[Crawl](https://docs.zenrows.com/crawl/introduction) (new) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops; without `depth` it has no depth limit and follows links until `maxPages` or `maxItems` stops it (each defaults to 100), or no link is left to open. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
 
 Crawl is still evolving: new features are coming, limits may be tuned, and the changelog announces each change.
 
@@ -283,7 +283,7 @@ const apiKey = "YOUR-API-KEY";
 
   const crawl = await client.crawl.create({
     url: "https://www.scrapingcourse.com/ecommerce/",
-    depth: 1, // link hops from the start URL
+    depth: 1, // link hops from the start URL; omit for no depth limit
     maxItems: 10, // stop once this many URLs are kept
     maxPages: 20, // stop once this many pages are fetched; bounds the cost
     includePatterns: ["/product/"], // keep only URLs containing one of these
@@ -325,7 +325,7 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code`, `detail` and `retryAft
 
 `content()` takes a content id, a `content_url` or a result, and throws a `TypeError` when it cannot read a content id from it. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
 
-`outputFormat` takes `"html"`; without it a crawl returns URLs only. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`. A download line's `content` is a string, or an object for a crawl that returns JSON.
+`outputFormat` takes `"html"`; without it a crawl returns URLs only. `maxPages` and `maxItems` default to 100 each. A crawl created without `depth` has no `depth` field; one created with it echoes it. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`. A download line's `content` is a string, or an object for a crawl that returns JSON.
 
 The crawl client (`ZenRowsCrawlClient`) also works standalone. Both forms take the same options:
 

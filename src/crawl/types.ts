@@ -32,7 +32,8 @@ export interface Crawl {
   crawl_id: string;
   status: Extensible<CrawlStatus>;
   url: string;
-  depth: number;
+  /** The depth limit the crawl was created with. Absent when it was created without one: no depth limit. */
+  depth?: number;
   max_items: number;
   max_pages: number;
   coverage: CrawlCoverage;

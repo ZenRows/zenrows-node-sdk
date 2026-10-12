@@ -39,11 +39,14 @@ export interface CrawlClientConfig {
 export interface CreateCrawlParams {
   /** The page the crawl starts from: an absolute public `http`/`https` URL. */
   url: string;
-  /** Link hops to follow from the start URL, 1–100000. */
-  depth: number;
-  /** Stop once this many URLs are kept. Server default 10. */
+  /**
+   * Link hops to follow from the start URL, 1–100000. Omit it for no depth limit: the crawl
+   * follows links until `maxPages` or `maxItems` stops it, or no link is left to open.
+   */
+  depth?: number;
+  /** Stop once this many URLs are kept, 1–100000. Server default 100. */
   maxItems?: number;
-  /** Stop once this many pages are fetched; bounds the cost. Server default 10. */
+  /** Stop once this many pages are fetched, 1–100000; bounds the cost. Server default 100. */
   maxPages?: number;
   /** Keep a URL only if it contains at least one of these substrings. */
   includePatterns?: string[];
