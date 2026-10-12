@@ -431,6 +431,23 @@ describe("ZenRowsCrawlClient — stop on 503 crawl_busy", () => {
     expect(calls).toBe(2);
   });
 
+  test("waits at most 30 seconds, whatever Retry-After asks for", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        if (calls === 1) return problem(503, "crawl_busy", "Crawl busy", { "Retry-After": "3600" });
+        return HttpResponse.json({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
+      }),
+    );
+    const stopping = new ZenRowsCrawlClient("API_KEY", { retries: 1 }).stop("c_1");
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await stopping).status).toBe("stopped");
+    expect(calls).toBe(2);
+  });
+
   test("throws crawl_busy once the retries run out", async () => {
     let calls = 0;
     server.use(
