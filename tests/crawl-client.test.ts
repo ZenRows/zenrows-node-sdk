@@ -87,6 +87,27 @@ describe("ZenRowsCrawlClient — requests", () => {
     expect(body).toEqual({ url: "https://example.com/", depth: 2 });
   });
 
+  test("create without depth sends no depth, and a crawl without depth parses", async () => {
+    let body: unknown;
+    const { depth: _omitted, ...unbounded } = crawl({
+      status: "running",
+      max_items: 100,
+      max_pages: 100,
+    });
+    server.use(
+      http.post(`${BASE}/crawls`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(unbounded, { status: 202 });
+      }),
+    );
+    const created = await client.create({ url: "https://example.com/" });
+    expect(body).toEqual({ url: "https://example.com/" });
+    expect(created).not.toHaveProperty("depth");
+    expect(created.depth).toBeUndefined();
+    expect(created.max_pages).toBe(100);
+    expect(created.max_items).toBe(100);
+  });
+
   test("get passes cursor and limit, and parses results", async () => {
     let query: URLSearchParams | undefined;
     server.use(
@@ -440,7 +461,7 @@ describe("ZenRowsCrawlClient — errors", () => {
   });
 });
 
-describe("ZenRowsCrawlClient — stop on 503 crawl_busy", () => {
+describe("ZenRowsCrawlClient — stop retries", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
   });
@@ -509,12 +530,70 @@ describe("ZenRowsCrawlClient — stop on 503 crawl_busy", () => {
     expect(calls).toBe(3);
   });
 
-  test("does not retry another 503", async () => {
+  test("retries a 503 with another code", async () => {
     let calls = 0;
     server.use(
       http.post(`${BASE}/crawls/c_1/stop`, () => {
         calls += 1;
-        return problem(503, "internal_error", "Unavailable", { "Retry-After": "1" });
+        if (calls === 1)
+          return problem(503, "internal_error", "Unavailable", { "Retry-After": "1" });
+        return HttpResponse.json({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
+      }),
+    );
+    const stopping = new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1");
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await stopping).status).toBe("stopped");
+    expect(calls).toBe(2);
+  });
+
+  test.each([
+    [429, "rate_limited", "Slow down"],
+    [502, "bad_gateway", "Bad gateway"],
+    [504, "gateway_timeout", "Gateway timeout"],
+  ])("retries a %i once and returns the stopped crawl", async (status, code, title) => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        if (calls === 1) return problem(status, code, title, { "Retry-After": "2" });
+        return HttpResponse.json({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
+      }),
+    );
+    const stopping = new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1");
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await stopping).status).toBe("stopped");
+    expect(calls).toBe(2);
+  });
+
+  test("throws the last 502 once the retries run out", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        return problem(502, "bad_gateway", "Bad gateway");
+      }),
+    );
+    const stopping = expect(
+      new ZenRowsCrawlClient("API_KEY", { retries: 2 }).stop("c_1"),
+    ).rejects.toSatisfy((error: unknown) => {
+      const err = error as ZenRowsCrawlError;
+      expect(err).toBeInstanceOf(ZenRowsCrawlError);
+      expect(err.status).toBe(502);
+      return true;
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await stopping;
+    expect(calls).toBe(3);
+  });
+
+  test("does not retry a 404", async () => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        return problem(404, "crawl_not_found", "Not found");
       }),
     );
     const stopping = expect(
@@ -523,6 +602,32 @@ describe("ZenRowsCrawlClient — stop on 503 crawl_busy", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await stopping;
     expect(calls).toBe(1);
+  });
+
+  test.each([
+    ["missing", undefined],
+    ["empty", ""],
+    ["negative", "-1"],
+    ["NaN", "nan"],
+    ["text", "soon"],
+  ])("a %s Retry-After waits 1 second", async (_label, retryAfter) => {
+    let calls = 0;
+    server.use(
+      http.post(`${BASE}/crawls/c_1/stop`, () => {
+        calls += 1;
+        if (calls === 1) {
+          const headers = retryAfter === undefined ? undefined : { "Retry-After": retryAfter };
+          return problem(503, "crawl_busy", "Crawl busy", headers);
+        }
+        return HttpResponse.json({ crawl_id: "c_1", status: "stopped", stop_reason: "user" });
+      }),
+    );
+    const stopping = new ZenRowsCrawlClient("API_KEY", { retries: 1 }).stop("c_1");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(calls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await stopping).status).toBe("stopped");
+    expect(calls).toBe(2);
   });
 });
 

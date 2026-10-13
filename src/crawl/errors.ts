@@ -52,7 +52,8 @@ export function crawlError(
   extras: Record<string, unknown> | undefined,
 ): ZenRowsCrawlError {
   const raw = response.headers.get("Retry-After");
-  const secs = raw === null ? Number.NaN : Number(raw);
+  // An empty header is missing, not 0 (Number("") is 0).
+  const secs = raw === null || raw.trim() === "" ? Number.NaN : Number(raw);
   return new ZenRowsCrawlError(
     response.status,
     problem,

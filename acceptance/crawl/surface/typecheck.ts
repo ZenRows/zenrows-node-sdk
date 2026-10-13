@@ -29,6 +29,9 @@ export async function main(): Promise<void> {
     outputFormat: "html",
   };
   const c: Crawl = await client.crawl.create(params, { idempotencyKey: "k" });
+  // depth is optional: left out, the crawl has no depth limit and the response omits it.
+  const unbounded: Crawl = await client.crawl.create({ url: "https://example.com/" });
+  const depth: number | undefined = unbounded.depth;
   const w: Crawl = await standalone.wait(c.crawl_id, { timeout: 1 });
   const g: CrawlWithResults = await client.crawl.get(w.crawl_id, { limit: 2 });
   const next: string | null = g.next_cursor;
@@ -51,5 +54,5 @@ export async function main(): Promise<void> {
       console.log(code, status);
     }
   }
-  console.log(next, listNext, s.status);
+  console.log(next, listNext, s.status, depth);
 }
