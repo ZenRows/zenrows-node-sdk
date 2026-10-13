@@ -22,6 +22,21 @@ type HttpMethods = "GET" | "POST" | "PUT";
 /** Extract mode — see https://docs.zenrows.com/extract/setup for what each mode returns. */
 export type ExtractMode = "auto" | "native" | "standard";
 
+/** True when the caller forces a value the API reads as on: `true` or the string "true". */
+function isOn(value: unknown): boolean {
+  return value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
+}
+
+/** The wire `mode` extract() sends. A `mode` the caller set is kept as given. Otherwise
+ * Adaptive Stealth Mode (`"auto"`) is added when enabled, except when the caller forces
+ * `js_render` or `premium_proxy`: the API rejects either combined with `mode=auto`. */
+function extractWireMode(config: ZenRowsConfig, adaptiveStealth: boolean): "auto" | undefined {
+  if (config.mode !== undefined) return config.mode;
+  if (!adaptiveStealth) return undefined;
+  if (isOn(config.js_render) || isOn(config.premium_proxy)) return undefined;
+  return "auto";
+}
+
 /** True when a response says Extract can't serve the target domain yet: a 403
  * carrying REQS007 (domain not prepared yet) or a 402 carrying the legacy
  * domain-not-enabled code AUTH010. Any other 402/403 (no credits, bad key) is
@@ -155,8 +170,9 @@ export class ZenRows {
    *
    * Also sends Adaptive Stealth Mode (`mode: "auto"`) by default, so a target that needs
    * `js_render`/`premium_proxy` gets escalated automatically instead of failing with
-   * REQS002 — pass `adaptiveStealth: false` to disable that and set `js_render`/
-   * `premium_proxy` yourself.
+   * REQS002. It is skipped when the config sets `js_render` or `premium_proxy` (the API
+   * rejects either combined with Adaptive Stealth Mode) or its own `mode`. Pass
+   * `adaptiveStealth: false` to turn it off entirely.
    *
    * Extract works on any domain Zenrows has prepared, with any active API key. On a
    * domain that isn't prepared yet, `extract=auto` returns a 403 with `code: "REQS007"`
@@ -184,7 +200,7 @@ export class ZenRows {
       adaptiveStealth = true,
       ...rest
     } = config ?? {};
-    const mode = adaptiveStealth ? "auto" : undefined;
+    const mode = extractWireMode(rest, adaptiveStealth);
     const response = await this.fetch(url, { ...rest, extract, mode }, opts);
 
     if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
