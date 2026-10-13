@@ -60,7 +60,7 @@ const url = "https://www.zenrows.com/";
   const response = await client.fetch(
     url,
     {
-      // Our algorithm allows to automatically extract content from any website
+      // Deprecated: general-purpose JSON from any page. Use client.extract() (see Extract below) instead
       autoparse: false,
 
       // CSS Selectors for data extraction (i.e. {"links":"a @href"} to get href attributes from links)
@@ -175,7 +175,7 @@ const url = "https://httpbin.org/anything";
 
 ### Extract
 
-[Extract](https://docs.zenrows.com) (beta) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
+[Extract](https://docs.zenrows.com/extract/introduction) (beta) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
 
 ```javascript
 const { ZenRows } = require("zenrows");

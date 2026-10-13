@@ -109,8 +109,48 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.get("extract")).toBe("native");
   });
 
-  describe("extract() AUTH010 fallback", () => {
-    test("retries once with autoparse when the domain isn't Extract-enabled", async () => {
+  describe("extract() Autoparse fallback", () => {
+    test("retries once with autoparse when the domain isn't prepared yet (REQS007)", async () => {
+      let secondCallUrl: URL | undefined;
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", ({ request }) => {
+          attempt += 1;
+          if (attempt === 1) {
+            return HttpResponse.json(
+              { code: "REQS007", title: "Domain not prepared for Extract" },
+              { status: 403 },
+            );
+          }
+          secondCallUrl = new URL(request.url);
+          return HttpResponse.json([{ found: "via autoparse" }]);
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(200);
+      expect(attempt).toBe(2);
+      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
+      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
+    });
+
+    test("does not retry for a 403 that isn't REQS007 (e.g. a bad key)", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH002", title: "Invalid API key" }, { status: 403 });
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(403);
+      expect(attempt).toBe(1);
+    });
+
+    test("retries once with autoparse on the legacy AUTH010", async () => {
       let secondCallUrl: URL | undefined;
       let attempt = 0;
       server.use(

@@ -19,16 +19,21 @@ const API_URL = "https://api.zenrows.com/v1/";
 
 type HttpMethods = "GET" | "POST" | "PUT";
 
-/** Extract mode — see https://docs.zenrows.com for what each mode returns. */
+/** Extract mode — see https://docs.zenrows.com/extract/setup for what each mode returns. */
 export type ExtractMode = "auto" | "native" | "standard";
 
-/** True when a response's JSON error envelope carries the Extract
- * domain-not-enabled code (AUTH010). Reads via `.clone()` so the original
- * response body is left unconsumed for the caller. */
-async function isAuth010(response: Response): Promise<boolean> {
+/** True when a response says Extract can't serve the target domain yet: a 403
+ * carrying REQS007 (domain not prepared yet) or a 402 carrying the legacy
+ * domain-not-enabled code AUTH010. Any other 402/403 (no credits, bad key) is
+ * not. Reads via `.clone()` so the original response body is left unconsumed
+ * for the caller. */
+async function isExtractDomainNotReady(response: Response): Promise<boolean> {
+  const expected =
+    response.status === 403 ? "REQS007" : response.status === 402 ? "AUTH010" : undefined;
+  if (!expected) return false;
   try {
     const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toUpperCase() === "AUTH010";
+    return typeof body?.code === "string" && body.code.toUpperCase() === expected;
   } catch {
     return false;
   }
@@ -138,10 +143,12 @@ export class ZenRows {
    * REQS002 — pass `adaptiveStealth: false` to disable that and set `js_render`/
    * `premium_proxy` yourself.
    *
-   * `extract=auto` is a domain-gated open beta: when the target domain isn't enabled yet,
-   * the API returns a 402 with `code: "AUTH010"`. By default this method catches that and
+   * Extract works on any domain Zenrows has prepared, with any active API key. On a
+   * domain that isn't prepared yet, `extract=auto` returns a 403 with `code: "REQS007"`
+   * (prepare it with `POST /v1/extract/prepared-domains`); the legacy domain-not-enabled
+   * error is a 402 with `code: "AUTH010"`. By default this method catches either and
    * retries once with `autoparse: true` instead of returning the error response — pass
-   * `fallbackToAutoparse: false` to disable that and get the raw AUTH010 response back.
+   * `fallbackToAutoparse: false` to disable that and get the raw error response back.
    */
   public async extract(
     url: string,
@@ -161,12 +168,7 @@ export class ZenRows {
     const mode = adaptiveStealth ? "auto" : undefined;
     const response = await this.fetch(url, { ...rest, extract, mode }, opts);
 
-    if (
-      response.status === 402 &&
-      extract === "auto" &&
-      fallbackToAutoparse &&
-      (await isAuth010(response))
-    ) {
+    if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
       return this.fetch(url, { ...rest, autoparse: true, mode }, opts);
     }
 
