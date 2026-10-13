@@ -53,6 +53,17 @@ describe("ZenRowsBatchClient — error shape", () => {
     });
   });
 
+  test("problem.code is internal when the Problem+JSON body has no code", async () => {
+    await expect(
+      client.job("job_no_credit").addTasks([{ url: "https://example.com" }]),
+    ).rejects.toSatisfy((error: unknown) => {
+      const err = error as ZenRowsBatchError;
+      expect(err.code).toBe("internal");
+      expect(err.problem?.code).toBe("internal");
+      return true;
+    });
+  });
+
   test("degrades gracefully on a non-JSON error body, still carrying the real status", async () => {
     await expect(client.getJob("job_broken_upstream")).rejects.toSatisfy((error: unknown) => {
       const err = error as ZenRowsBatchError;

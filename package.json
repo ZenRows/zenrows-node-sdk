@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsup src/index.ts --dts --format cjs,esm --clean",
     "test": "vitest",
+    "test:e2e": "vitest run tests/e2e",
     "format": "biome format --write .",
     "check": "biome check ."
   },
