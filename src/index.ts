@@ -39,6 +39,20 @@ async function isExtractDomainNotReady(response: Response): Promise<boolean> {
   }
 }
 
+/** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
+ * of page but found no data on it. The request is not charged and the client never
+ * retries it, since another try returns the same answer. Reads via `.clone()`, so the
+ * original response body is left unconsumed for the caller. */
+export async function isNoDataExtracted(response: Response): Promise<boolean> {
+  if (response.status !== 422) return false;
+  try {
+    const body = (await response.clone().json()) as { code?: unknown };
+    return typeof body?.code === "string" && body.code.toLowerCase() === "no_data_extracted";
+  } catch {
+    return false;
+  }
+}
+
 interface ClientConfig {
   concurrency?: number;
   retries?: number;
@@ -92,18 +106,19 @@ export class ZenRows {
     this.fetchWithRetry = fetchRetry(fetch, {
       retryDelay: (attempt) => 2 ** attempt * 1000,
       // retryOn: [422, 503, 504],
-      retryOn: (attempt, error, response) => {
+      retryOn: async (attempt, error, response) => {
         if (attempt >= retries) {
           return false;
         }
 
-        if (
-          error !== null ||
-          response?.status === 422 ||
-          response?.status === 503 ||
-          response?.status === 504
-        ) {
+        if (error !== null || response?.status === 503 || response?.status === 504) {
           return true;
+        }
+
+        // A 422 is usually a failure to get the target's content and worth another
+        // try, except Extract's `no_data_extracted`, which is a final answer.
+        if (response?.status === 422) {
+          return !(await isNoDataExtracted(response));
         }
 
         return false;
@@ -149,6 +164,10 @@ export class ZenRows {
    * error is a 402 with `code: "AUTH010"`. By default this method catches either and
    * retries once with `autoparse: true` instead of returning the error response — pass
    * `fallbackToAutoparse: false` to disable that and get the raw error response back.
+   *
+   * A 422 with `code: "no_data_extracted"` means Extract knows this kind of page but
+   * found no data on it. It is not charged and is never retried; check it with
+   * `isNoDataExtracted(response)`.
    */
   public async extract(
     url: string,
