@@ -321,9 +321,9 @@ Errors throw a `ZenRowsCrawlError` with `status`, `code`, `detail` and `retryAft
 - `409` `idempotency_request_in_flight`: a request with the same `idempotencyKey` is still running. Retry after it finishes.
 - `422` `invalid_parameter` / `invalid_start_url` / `domain_not_allowed`: `detail` names the problem. `422` `idempotency_key_reused`: the key was used with a different body. Use a new key or no key; do not retry as is.
 - `429` `too_many_crawls`: the account has reached its limit of active jobs (3 by default), shared with its Batch jobs. Nothing was created. `create()` never retries it; retry after `error.retryAfter` seconds.
-- `503` `crawl_busy`: the stop could not be saved yet; the crawl is still running. `stop()` retries it up to `retries` times, waiting `error.retryAfter` seconds, then throws it. Repeating the stop is safe.
+- `503` `crawl_busy`: the stop could not be saved yet; the crawl is still running. Repeating the stop is safe, so `stop()` retries it, and any other 429, 502, 503 or 504, up to `retries` times, waiting `error.retryAfter` seconds (at most 30, or 1 when the header is missing), then throws the last error.
 
-`content()` takes a content id, a `content_url` or a result, and throws a `TypeError` when it cannot read a content id from it. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`.
+`content()` takes a content id, a `content_url` or a result, and throws a `TypeError` when it cannot read a content id from it. Requests retry network errors and 502/503/504 (and 429 on reads) when it is safe; a `create()` is retried only with an `idempotencyKey`, and a `stop()` as described above.
 
 `outputFormat` takes `"html"`; without it a crawl returns URLs only. `maxPages` and `maxItems` default to 100 each. A crawl created without `depth` has no `depth` field; one created with it echoes it. Response enum fields (`status`, `stop_reason`, `error.code`, `content_status`) are `Extensible<...>`: the known values plus any `string`. A failed crawl carries `error.code` and `error.detail`. A download line's `content` is a string, or an object for a crawl that returns JSON.
 

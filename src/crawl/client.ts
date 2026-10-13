@@ -19,9 +19,10 @@ const MAX_POLL_INTERVAL_SECONDS = 15;
 const POLL_BACKOFF = 1.5;
 // 429 `too_many_crawls` is a capacity limit: a retry only waits for a slot the caller may never get.
 const CREATE_RETRY_STATUSES: ReadonlySet<number> = new Set([502, 503, 504]);
-// 503 `crawl_busy` on stop: nothing was saved and the crawl is still running, so the stop is safe to repeat.
-const CRAWL_BUSY = "crawl_busy";
-// The longest a crawl_busy Retry-After may make a stop wait, so a large server value cannot hang it.
+// A stop is safe to repeat (an ended crawl answers with its status), so stop retries these even
+// without an Idempotency-Key. A 503 `crawl_busy` means nothing was saved and the crawl still runs.
+const STOP_RETRY_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
+// The longest a Retry-After may make a stop wait, so a large server value cannot hang it.
 const MAX_STOP_RETRY_AFTER_SECONDS = 30;
 
 export interface CrawlClientConfig {
@@ -29,7 +30,7 @@ export interface CrawlClientConfig {
   baseURL?: string;
   /**
    * Retries for transient failures (502/503/504, network errors, 429 on reads) on idempotent
-   * requests, and for a `stop()` answered 503 `crawl_busy`. Default 3.
+   * requests, and for a `stop()` answered 429, 502, 503 or 504. Default 3.
    */
   retries?: number;
   /** Seconds each HTTP request may take. Default 30. Does not limit reading a `download()` body. */
@@ -175,8 +176,10 @@ export class ZenRowsCrawlClient {
 
   /**
    * Stop a running crawl. Idempotent: a crawl that already ended answers as it ended.
-   * A 503 `crawl_busy` means the stop was not saved and the crawl is still running: `stop()`
-   * retries it up to `retries` times, waiting `Retry-After` seconds (at most 30) each time, then throws it.
+   * Because a stop is safe to repeat, `stop()` retries a 429, 502, 503 (including `crawl_busy`,
+   * which means the stop was not saved and the crawl is still running) or 504 up to `retries`
+   * times, waiting `Retry-After` seconds (at most 30; 1 when the header is missing or unusable)
+   * each time, then throws the last error.
    */
   async stop(crawlId: string): Promise<CrawlStop> {
     for (let attempt = 0; ; attempt += 1) {
@@ -188,8 +191,7 @@ export class ZenRowsCrawlClient {
       } catch (error) {
         if (
           !(error instanceof ZenRowsCrawlError) ||
-          error.status !== 503 ||
-          error.code !== CRAWL_BUSY ||
+          !STOP_RETRY_STATUSES.has(error.status) ||
           attempt >= this.retries
         ) {
           throw error;
