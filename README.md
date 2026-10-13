@@ -196,7 +196,7 @@ const url = "https://www.zenrows.com/";
 
 ### Batch
 
-The [Batch API](https://docs.zenrows.com) (beta) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either **open** — it keeps accepting tasks via `addTasks()` until you `closeJob()` it, useful when you're streaming URLs in over time — or a normal one-shot batch where every task is known upfront.
+The [Batch API](https://docs.zenrows.com) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either **open** — it keeps accepting tasks via `addTasks()` until you `closeJob()` it, useful when you're streaming URLs in over time — or a normal one-shot batch where every task is known upfront.
 
 ```javascript
 const { ZenRows } = require("zenrows");
