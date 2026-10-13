@@ -133,8 +133,8 @@ export class ZenRows {
   }
 
   /**
-   * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction
-   * (beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
+   * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction.
+   * `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
    * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
    * `extract` param set — no separate endpoint or auth.
    *
