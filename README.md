@@ -60,7 +60,7 @@ const url = "https://www.zenrows.com/";
   const response = await client.fetch(
     url,
     {
-      // Deprecated: general-purpose JSON from any page. Use client.extract() (see Extract below) instead
+      // Deprecated: general-purpose JSON from any page. Use client.extract() (see Extract below) or `css_extractor` instead
       autoparse: false,
 
       // CSS Selectors for data extraction (i.e. {"links":"a @href"} to get href attributes from links)
