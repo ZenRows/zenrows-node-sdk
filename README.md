@@ -25,6 +25,7 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
 - [Examples](#examples)
 - [Contributing](#contributing)
   - [Running the Crawl e2e test](#running-the-crawl-e2e-test)
+  - [Releases](#releases)
 - [License](#license)
 
 ## Installation
@@ -436,6 +437,36 @@ pnpm test:e2e
 ```
 
 The run creates one crawl on the account and uses up to a few pages of credits. If the account has reached its limit of active jobs, the test waits and retries (up to 5 minutes).
+
+### Releases
+
+Merge PRs with Conventional Commit titles, for example `fix(crawl): ...` or
+`feat(batch): ...`. `fix`, `feat` and `perf` need a scope.
+
+After each merge to `main`, release-please opens or updates the PR
+`chore: release X.Y.Z`. It sets the version in `package.json`. Do not change
+it by hand.
+
+To release, merge that PR. The workflow runs the checks, creates the tag
+`vX.Y.Z` and the GitHub release, and publishes to npm.
+
+To publish an existing tag again, run the Release workflow by hand from
+`main` with that tag.
+
+#### If the checks fail after the release PR is merged
+
+The release PR runs no CI, so its checks first run after the merge. If they
+fail, `main` already has the new version, but there is no tag, and the
+merged release PR keeps the `autorelease: pending` label, which blocks the
+next release PR. To recover:
+
+1. Fix the problem in a normal PR and merge it.
+2. Create the release on that fix commit, with the version from
+   `.release-please-manifest.json`:
+   `gh release create vX.Y.Z --target <fix commit> --title vX.Y.Z --generate-notes --notes-start-tag <previous tag>`
+3. On the merged release PR, replace the label `autorelease: pending` with
+   `autorelease: tagged`.
+4. Run the Release workflow by hand from `main` with the tag `vX.Y.Z`.
 
 ## License
 
