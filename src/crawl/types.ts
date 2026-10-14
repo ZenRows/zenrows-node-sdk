@@ -7,14 +7,17 @@ export type CrawlStopReason = "max_items" | "max_pages" | "user";
 /** Why a crawl failed (`status: failed`). */
 export type CrawlErrorCode =
   | "insufficient_credits"
+  | "api_key_cap_reached"
   | "seed_unreachable"
   | "domain_not_allowed"
   | "no_items_found"
   | "internal_error";
 /** Where a kept URL's page stands, when the crawl has an `output_format`. */
 export type CrawlContentStatus = "pending" | "fetched" | "failed";
-/** Return each kept URL's page as fetched. Absent means URLs only. */
-export type CrawlOutputFormat = "html";
+/** Return each kept URL's page, in this format. Absent means URLs only. */
+export type CrawlOutputFormat = "html" | "markdown";
+/** How a crawl finds the URLs it follows on each page it walks. */
+export type CrawlDiscoveryStrategy = "links";
 
 export interface CrawlCoverage {
   pages_fetched: number;
@@ -43,6 +46,11 @@ export interface Crawl {
   include_patterns?: string[];
   exclude_patterns?: string[];
   output_format?: Extensible<CrawlOutputFormat>;
+  /**
+   * The strategies the crawl finds URLs with. `["links"]` when the create left it out.
+   * Absent when the server does not send the field.
+   */
+  discovery?: Extensible<CrawlDiscoveryStrategy>[];
   duplicates_removed?: number;
   /** Absent while the crawl runs. */
   finished_at?: string;
