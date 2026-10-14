@@ -44,7 +44,7 @@ Start using the API by [creating your API Key](https://app.zenrows.com/register?
 
 The SDK uses the official [fetch api](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html) for HTTP requests. The client's response will be a [`Response`](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html#response).
 
-It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to automatically retry failed requests (status code 429 and 5XX). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
+It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to automatically retry failed requests (network errors and status codes 422, 503 and 504, except Extract's `422 no_data_extracted`). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
 
 > `client.fetch()` is the primary method for the main page-scraping product. `client.get()` still works and is kept as a deprecated alias — new code should call `fetch()`.
 
@@ -60,7 +60,7 @@ const url = "https://www.zenrows.com/";
   const response = await client.fetch(
     url,
     {
-      // Our algorithm allows to automatically extract content from any website
+      // Deprecated: general-purpose JSON from any page. Use client.extract() (see Extract below) or `css_extractor` instead
       autoparse: false,
 
       // CSS Selectors for data extraction (i.e. {"links":"a @href"} to get href attributes from links)
@@ -175,7 +175,7 @@ const url = "https://httpbin.org/anything";
 
 ### Extract
 
-[Extract](https://docs.zenrows.com) (beta) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
+[Extract](https://docs.zenrows.com/extract/introduction) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -193,6 +193,10 @@ const url = "https://www.zenrows.com/";
   console.log(data);
 })();
 ```
+
+`extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
+
+A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup).
 
 ### Batch
 

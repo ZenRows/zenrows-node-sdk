@@ -1,7 +1,7 @@
 {
   "name": "zenrows",
   "version": "2.2.0",
-  "description": "ZenRows Node SDK",
+  "description": "Zenrows Node SDK: Fetch, Extract (structured data), Batch and Crawl APIs",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -28,6 +28,8 @@
     "zenrows",
     "scraping",
     "proxy",
+    "extract",
+    "structured-data",
     "data extraction",
     "web scraping",
     "web scraping api"

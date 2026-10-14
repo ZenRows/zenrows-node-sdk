@@ -102,6 +102,35 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.has("mode")).toBe(false);
   });
 
+  test("extract() skips Adaptive Stealth Mode when js_render is set", async () => {
+    const response = await client.extract(url, { js_render: true });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.has("mode")).toBe(false);
+    expect(parsedUrl.searchParams.get("js_render")).toBe("true");
+  });
+
+  test("extract() skips Adaptive Stealth Mode when premium_proxy is set", async () => {
+    const response = await client.extract(url, { premium_proxy: true });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.has("mode")).toBe(false);
+  });
+
+  test("extract() keeps Adaptive Stealth Mode when js_render is false", async () => {
+    const response = await client.extract(url, { js_render: false });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("mode")).toBe("auto");
+  });
+
+  test("extract() keeps a wire mode the caller set, even with adaptiveStealth off", async () => {
+    const response = await client.extract(url, { mode: "auto", adaptiveStealth: false });
+
+    const parsedUrl = new URL(response.url);
+    expect(parsedUrl.searchParams.get("mode")).toBe("auto");
+  });
+
   test("extract() accepts an explicit mode", async () => {
     const response = await client.extract(url, { extract: "native" });
 
@@ -109,8 +138,48 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.get("extract")).toBe("native");
   });
 
-  describe("extract() AUTH010 fallback", () => {
-    test("retries once with autoparse when the domain isn't Extract-enabled", async () => {
+  describe("extract() Autoparse fallback", () => {
+    test("retries once with autoparse when the domain isn't prepared yet (REQS007)", async () => {
+      let secondCallUrl: URL | undefined;
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", ({ request }) => {
+          attempt += 1;
+          if (attempt === 1) {
+            return HttpResponse.json(
+              { code: "REQS007", title: "Domain not prepared for Extract" },
+              { status: 403 },
+            );
+          }
+          secondCallUrl = new URL(request.url);
+          return HttpResponse.json([{ found: "via autoparse" }]);
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(200);
+      expect(attempt).toBe(2);
+      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
+      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
+    });
+
+    test("does not retry for a 403 that isn't REQS007 (e.g. a bad key)", async () => {
+      let attempt = 0;
+      server.use(
+        http.get("https://api.zenrows.com/v1/", () => {
+          attempt += 1;
+          return HttpResponse.json({ code: "AUTH002", title: "Invalid API key" }, { status: 403 });
+        }),
+      );
+
+      const response = await client.extract(url);
+
+      expect(response.status).toBe(403);
+      expect(attempt).toBe(1);
+    });
+
+    test("retries once with autoparse on the legacy AUTH010", async () => {
       let secondCallUrl: URL | undefined;
       let attempt = 0;
       server.use(
@@ -134,6 +203,27 @@ describe("ZenRows Client Get", () => {
       expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
       expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
       expect(secondCallUrl?.searchParams.get("mode")).toBe("auto");
+    });
+
+    test("the fallback request also skips Adaptive Stealth Mode with premium_proxy", async () => {
+      const urls: URL[] = [];
+      server.use(
+        http.get("https://api.zenrows.com/v1/", ({ request }) => {
+          urls.push(new URL(request.url));
+          if (urls.length === 1) {
+            return HttpResponse.json({ code: "REQS007" }, { status: 403 });
+          }
+          return HttpResponse.json([{ found: "via autoparse" }]);
+        }),
+      );
+
+      const response = await client.extract(url, { premium_proxy: true });
+
+      expect(response.status).toBe(200);
+      expect(urls).toHaveLength(2);
+      expect(urls[0]?.searchParams.has("mode")).toBe(false);
+      expect(urls[1]?.searchParams.has("mode")).toBe(false);
+      expect(urls[1]?.searchParams.get("autoparse")).toBe("true");
     });
 
     test("does not retry when fallbackToAutoparse is false", async () => {

@@ -19,16 +19,50 @@ const API_URL = "https://api.zenrows.com/v1/";
 
 type HttpMethods = "GET" | "POST" | "PUT";
 
-/** Extract mode — see https://docs.zenrows.com for what each mode returns. */
+/** Extract mode — see https://docs.zenrows.com/extract/setup for what each mode returns. */
 export type ExtractMode = "auto" | "native" | "standard";
 
-/** True when a response's JSON error envelope carries the Extract
- * domain-not-enabled code (AUTH010). Reads via `.clone()` so the original
- * response body is left unconsumed for the caller. */
-async function isAuth010(response: Response): Promise<boolean> {
+/** True when the caller forces a value the API reads as on: `true` or the string "true". */
+function isOn(value: unknown): boolean {
+  return value === true || (typeof value === "string" && value.trim().toLowerCase() === "true");
+}
+
+/** The wire `mode` extract() sends. A `mode` the caller set is kept as given. Otherwise
+ * Adaptive Stealth Mode (`"auto"`) is added when enabled, except when the caller forces
+ * `js_render` or `premium_proxy`: the API rejects either combined with `mode=auto`. */
+function extractWireMode(config: ZenRowsConfig, adaptiveStealth: boolean): "auto" | undefined {
+  if (config.mode !== undefined) return config.mode;
+  if (!adaptiveStealth) return undefined;
+  if (isOn(config.js_render) || isOn(config.premium_proxy)) return undefined;
+  return "auto";
+}
+
+/** True when a response says Extract can't serve the target domain yet: a 403
+ * carrying REQS007 (domain not prepared yet) or a 402 carrying the legacy
+ * domain-not-enabled code AUTH010. Any other 402/403 (no credits, bad key) is
+ * not. Reads via `.clone()` so the original response body is left unconsumed
+ * for the caller. */
+async function isExtractDomainNotReady(response: Response): Promise<boolean> {
+  const expected =
+    response.status === 403 ? "REQS007" : response.status === 402 ? "AUTH010" : undefined;
+  if (!expected) return false;
   try {
     const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toUpperCase() === "AUTH010";
+    return typeof body?.code === "string" && body.code.toUpperCase() === expected;
+  } catch {
+    return false;
+  }
+}
+
+/** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
+ * of page but found no data on it. The request is not charged and the client never
+ * retries it, since another try returns the same answer. Reads via `.clone()`, so the
+ * original response body is left unconsumed for the caller. */
+export async function isNoDataExtracted(response: Response): Promise<boolean> {
+  if (response.status !== 422) return false;
+  try {
+    const body = (await response.clone().json()) as { code?: unknown };
+    return typeof body?.code === "string" && body.code.toLowerCase() === "no_data_extracted";
   } catch {
     return false;
   }
@@ -87,18 +121,19 @@ export class ZenRows {
     this.fetchWithRetry = fetchRetry(fetch, {
       retryDelay: (attempt) => 2 ** attempt * 1000,
       // retryOn: [422, 503, 504],
-      retryOn: (attempt, error, response) => {
+      retryOn: async (attempt, error, response) => {
         if (attempt >= retries) {
           return false;
         }
 
-        if (
-          error !== null ||
-          response?.status === 422 ||
-          response?.status === 503 ||
-          response?.status === 504
-        ) {
+        if (error !== null || response?.status === 503 || response?.status === 504) {
           return true;
+        }
+
+        // A 422 is usually a failure to get the target's content and worth another
+        // try, except Extract's `no_data_extracted`, which is a final answer.
+        if (response?.status === 422) {
+          return !(await isNoDataExtracted(response));
         }
 
         return false;
@@ -128,20 +163,27 @@ export class ZenRows {
   }
 
   /**
-   * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction
-   * (beta). `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
+   * Fetch a URL and run it through Extract — Zenrows' AI-powered structured extraction.
+   * `mode` defaults to `"auto"`; pass `"native"` or `"standard"` to pick a
    * different extraction contract. This is a thin, typed wrapper over `fetch()` with the
    * `extract` param set — no separate endpoint or auth.
    *
    * Also sends Adaptive Stealth Mode (`mode: "auto"`) by default, so a target that needs
    * `js_render`/`premium_proxy` gets escalated automatically instead of failing with
-   * REQS002 — pass `adaptiveStealth: false` to disable that and set `js_render`/
-   * `premium_proxy` yourself.
+   * REQS002. It is skipped when the config sets `js_render` or `premium_proxy` (the API
+   * rejects either combined with Adaptive Stealth Mode) or its own `mode`. Pass
+   * `adaptiveStealth: false` to turn it off entirely.
    *
-   * `extract=auto` is a domain-gated open beta: when the target domain isn't enabled yet,
-   * the API returns a 402 with `code: "AUTH010"`. By default this method catches that and
+   * Extract works on any domain Zenrows has prepared, with any active API key. On a
+   * domain that isn't prepared yet, `extract=auto` returns a 403 with `code: "REQS007"`
+   * (prepare it with `POST /v1/extract/prepared-domains`); the legacy domain-not-enabled
+   * error is a 402 with `code: "AUTH010"`. By default this method catches either and
    * retries once with `autoparse: true` instead of returning the error response — pass
-   * `fallbackToAutoparse: false` to disable that and get the raw AUTH010 response back.
+   * `fallbackToAutoparse: false` to disable that and get the raw error response back.
+   *
+   * A 422 with `code: "no_data_extracted"` means Extract knows this kind of page but
+   * found no data on it. It is not charged and is never retried; check it with
+   * `isNoDataExtracted(response)`.
    */
   public async extract(
     url: string,
@@ -158,15 +200,10 @@ export class ZenRows {
       adaptiveStealth = true,
       ...rest
     } = config ?? {};
-    const mode = adaptiveStealth ? "auto" : undefined;
+    const mode = extractWireMode(rest, adaptiveStealth);
     const response = await this.fetch(url, { ...rest, extract, mode }, opts);
 
-    if (
-      response.status === 402 &&
-      extract === "auto" &&
-      fallbackToAutoparse &&
-      (await isAuth010(response))
-    ) {
+    if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
       return this.fetch(url, { ...rest, autoparse: true, mode }, opts);
     }
 
