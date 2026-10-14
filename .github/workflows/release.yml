@@ -254,7 +254,7 @@ jobs:
       # No token: npm authenticates this workflow through OIDC (trusted publishing).
       - name: Publish to npm
         if: steps.npm.outputs.published != 'true'
-        run: npm publish "package/zenrows-$VERSION.tgz" --provenance --access public
+        run: npm publish "./package/zenrows-$VERSION.tgz" --provenance --access public
 
       - name: Verify on npm
         run: |
