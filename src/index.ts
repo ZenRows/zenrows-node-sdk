@@ -79,6 +79,8 @@ export interface ZenRowsConfig {
    * viable request configuration and escalates to js_render/premium_proxy only when the
    * target needs it, billing only for the configuration that succeeds. */
   mode?: "auto";
+  /** @deprecated Autoparse is deprecated. Use `client.extract()` for structured data,
+   * or `css_extractor`. */
   autoparse?: boolean;
   css_extractor?: string;
   js_render?: boolean;
@@ -174,12 +176,16 @@ export class ZenRows {
    * rejects either combined with Adaptive Stealth Mode) or its own `mode`. Pass
    * `adaptiveStealth: false` to turn it off entirely.
    *
-   * Extract works on any domain Zenrows has prepared, with any active API key. On a
-   * domain that isn't prepared yet, `extract=auto` returns a 403 with `code: "REQS007"`
-   * (prepare it with `POST /v1/extract/prepared-domains`); the legacy domain-not-enabled
-   * error is a 402 with `code: "AUTH010"`. By default this method catches either and
-   * retries once with `autoparse: true` instead of returning the error response — pass
-   * `fallbackToAutoparse: false` to disable that and get the raw error response back.
+   * Extract works on any prepared domain (you can prepare one yourself with
+   * `POST /v1/extract/prepared-domains`), with any active API key. A 403 with
+   * `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with
+   * `POST /v1/extract/prepared-domains`, or pass `fallbackToAutoparse: true` to retry with
+   * deprecated autoparse. The legacy domain-not-enabled error is a 402 with
+   * `code: "AUTH010"`. By default both error responses are returned to you as is.
+   *
+   * `fallbackToAutoparse: true` (opt-in, default `false`) makes `extract: "auto"` retry
+   * once with `autoparse: true` on either code instead of returning the error response.
+   * Autoparse is deprecated, and the retry is a second, separately charged request.
    *
    * A 422 with `code: "no_data_extracted"` means Extract knows this kind of page but
    * found no data on it. It is not charged and is never retried; check it with
@@ -189,6 +195,7 @@ export class ZenRows {
     url: string,
     config?: ZenRowsConfig & {
       extract?: ExtractMode;
+      /** Opt-in: retry once with deprecated autoparse on REQS007 / AUTH010. Default `false`. */
       fallbackToAutoparse?: boolean;
       adaptiveStealth?: boolean;
     },
@@ -196,7 +203,7 @@ export class ZenRows {
   ): Promise<Response> {
     const {
       extract = "auto",
-      fallbackToAutoparse = true,
+      fallbackToAutoparse = false,
       adaptiveStealth = true,
       ...rest
     } = config ?? {};

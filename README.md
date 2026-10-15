@@ -197,6 +197,14 @@ const url = "https://www.zenrows.com/";
 
 `extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
 
+Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with `POST /v1/extract/prepared-domains`, or pass `fallbackToAutoparse: true` to retry with deprecated autoparse. The legacy `402` with `code: "AUTH010"` is handled the same way. By default `extract()` returns both error responses to you as is, without a second request.
+
+```javascript
+// Opt in to one retry with the deprecated autoparse on REQS007 / AUTH010.
+// The retry is a second, separately charged request.
+const response = await client.extract(url, { fallbackToAutoparse: true });
+```
+
 A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup).
 
 ### Batch
