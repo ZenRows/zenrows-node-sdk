@@ -48,11 +48,22 @@ export interface CreateCrawlParams {
   depth?: number;
   /** Stop once this many URLs are kept, 1–100000. Server default 100. */
   maxItems?: number;
-  /** Stop once this many pages are fetched, 1–100000; bounds the cost. Server default 100. */
+  /**
+   * Stop once this many pages are fetched, 1–100000; bounds the cost. Server default 100. Every
+   * page the crawl opens counts and is billed, returned or not.
+   */
   maxPages?: number;
-  /** Keep a URL only if it contains at least one of these substrings. */
+  /**
+   * Keep a URL only if it contains at least one of these substrings. Patterns filter what the
+   * crawl returns, not what it opens: it still opens on-site pages that fail them, to reach pages
+   * that match, and those fetches count toward `maxPages` and are billed. A crawl whose patterns
+   * match nothing ends `completed` with no results.
+   */
   includePatterns?: string[];
-  /** Drop a URL that contains any of these substrings, even if it matches an include pattern. */
+  /**
+   * Drop a URL that contains any of these substrings, even if it matches an include pattern. The
+   * crawl may still open it to follow its links.
+   */
   excludePatterns?: string[];
   /** Also fetch each kept URL's page, in this format. Absent means URLs only. */
   outputFormat?: CrawlOutputFormat;
