@@ -201,7 +201,9 @@ A `422` with `code: "no_data_extracted"` means Extract knows this kind of page b
 
 ### Batch
 
-The [Batch API](https://docs.zenrows.com) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either **open** (it keeps accepting tasks via `addTasks()` until you `closeJob()` it, useful when you're streaming URLs in over time) or a normal one-shot batch where every task is known upfront.
+The [Batch API](https://docs.zenrows.com/batch/introduction) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either a one-shot batch where every task is known upfront (`submitRegular()`), or **open** (`submitOpen()`): it keeps accepting tasks via `addTasks()` until you close it, which is useful when you're streaming URLs in over time.
+
+`submitRegular()` and `submitOpen()` return a `JobRef`. Work with the job through it: `job.addTasks()`, `job.close()`, `job.rerun()`, and the current run under `job.run` (`wait()`, `results()`, `downloadToDir()`, `stop()`, `pause()`, `resume()`).
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -211,28 +213,47 @@ const apiKey = "YOUR-API-KEY";
 (async () => {
   const client = new ZenRows(apiKey);
 
-  // One-shot batch: every task known upfront.
-  const job = await client.batch.submitJob({
-    tasks: [{ url: "https://example.com/1" }, { url: "https://example.com/2" }],
-  });
+  // One-shot batch: every task known upfront. Strings and { url, ... } objects both work.
+  const job = await client.batch.submitRegular([
+    "https://example.com/1",
+    { url: "https://example.com/2", external_id: "page-2" },
+  ]);
 
-  // Streaming batch: keep the job open, add tasks as they arrive, close when done.
-  const streamingJob = await client.batch.submitJob({ status: "open" });
-  await client.batch.addTasks(streamingJob.job_id, [{ url: "https://example.com/3" }]);
-  // Or close it as part of the last addTasks() call instead of a separate request:
-  // await client.batch.addTasks(streamingJob.job_id, [...], { lastBatch: true });
-  await client.batch.closeJob(streamingJob.job_id);
-
-  // Poll for progress and page through results once it's done.
-  const status = await client.batch.getJob(job.job_id);
-  const { results, next_cursor } = await client.batch.getResults(job.job_id);
+  // Wait for the run to finish, then read its results.
+  const run = await job.run.wait();
+  console.log(run.status, run.stats);
+  for await (const row of job.run.results({ status: "successful" })) {
+    console.log(row.task_id, row.url, row.result_url);
+  }
+  // Or save every successful result to disk.
+  await job.run.downloadToDir("./results");
 
   // Retry only the tasks that failed, inheriting the rest from the previous run.
-  await client.batch.rerun(job.job_id, { status: "failed" });
+  await job.retryFailed();
+
+  // Streaming batch: keep the job open, add tasks as they arrive, close when done.
+  const streamingJob = await client.batch.submitOpen();
+  await streamingJob.addTasks([{ url: "https://example.com/3" }]);
+  // Or close it as part of the last addTasks() call instead of a separate request:
+  // await streamingJob.addTasks([...], { lastBatch: true });
+  await streamingJob.close();
+
+  // Pick up an existing job later by its id.
+  const sameJob = await client.batch.getJob(job.jobId);
+  console.log(sameJob.status);
 })();
 ```
 
-`client.batch` also exposes `listJobs()`, `deleteJob()`, `stopRun()`, `rerun()`, `listRuns()`, `getRun()`, `deleteRun()`, and `getTaskContent()` (returns the scraped page's raw content as a string, not JSON — the endpoint can return HTML or plain text depending on what the target page served). Scheduling, webhook config, HMAC key rotation, CSV task uploads, and results exports aren't wrapped yet — call the [Batch API](https://docs.zenrows.com) directly for those.
+The client also wraps the rest of the API:
+
+- Jobs and runs: `getJob()`, `listJobs()` / `iterJobs()`, `job.delete()`, `job.runs()`, `getRun()`, `run.delete()`, `job.run.stop()`.
+- Results: `getResults()` / `iterResults()`, `downloadToMemory()`, `downloadTaskToFile()`, `getTaskHistory()`, and `getTaskContent()`. `getTaskContent()` returns the scraped page as a string, not JSON.
+- Scheduling: `submitScheduled()` with the `At`, `Rate` and `Calendar` builders, and `job.schedule.pause()` / `resume()` / `update()`.
+- Webhooks: `job.getWebhook()`, `job.setWebhook()`, `job.deleteWebhook()`, `testWebhook()`.
+- HMAC signing keys: `listHmacKeys()`, `rotateHmacKey()`, `finalizeHmacKey()`, `cancelHmacRotation()`.
+- CSV task uploads: `uploadCsv()`, then `submitRegular(undefined, fileInputId)`.
+- Results exports: `job.run.startExport()`, `waitForExport()`, `downloadAllResults()`.
+- Cost: `estimateCost(tasks, zenrowsParams)`.
 
 #### Failed runs and extensible values
 
