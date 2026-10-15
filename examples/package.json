@@ -9,6 +9,6 @@
   },
   "author": "ZenRows",
   "dependencies": {
-    "zenrows": "^2.0.2"
+    "zenrows": "^2.3.0"
   }
 }

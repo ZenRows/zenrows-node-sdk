@@ -10,6 +10,7 @@ export * from "./batch/estimate.js";
 export * from "./batch/schedule.js";
 export * from "./batch/waiters.js";
 export * from "./batch/download.js";
+export * from "./batch/webhook.js";
 export type * from "./batch/types.js";
 export * from "./crawl/client.js";
 export { CRAWL_NOT_ENABLED_CODE, ZenRowsCrawlError } from "./crawl/errors.js";

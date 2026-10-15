@@ -10,10 +10,17 @@ export type JobType = "regular" | "scheduled";
 export type JobStatus = "open" | "closed" | "deleted";
 export type ScheduleState = "active" | "paused";
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "deleted";
-export type TaskStatus = "pending" | "processing" | "successful" | "failed";
+/**
+ * `expired`: the result is older than the retention window (14 days by default). The row
+ * keeps its place but has no `result_url`, and fetching its content returns 410
+ * `result_expired`. A `status=successful` filter still matches expired rows.
+ */
+export type TaskStatus = "pending" | "processing" | "successful" | "failed" | "expired";
 export type PauseState = "active" | "paused";
 export type IngestStatus = "pending" | "done";
 export type ExportStatus = "pending" | "running" | "completed" | "failed";
+/** What started a run: `manual` (submit or rerun through the API) or `scheduled` (a schedule fired). */
+export type RunTrigger = "manual" | "scheduled";
 /**
  * Why a run auto-failed (`status == "failed"`).
  * - `insufficient_credits` — the account is out of credits.
@@ -31,6 +38,7 @@ export interface Spend {
   cost: number;
 }
 
+/** @deprecated Results listings never return per-task spend; see `TaskHistoryEvent.spend`. */
 export interface TaskSpend {
   total: Spend;
   last_attempt: Spend;
@@ -65,6 +73,8 @@ export interface Run {
   job_id: string;
   run_sequence: number;
   status: Extensible<RunStatus>;
+  /** What started this run. */
+  trigger?: Extensible<RunTrigger>;
   stats: RunStats;
   last_batch_received?: boolean;
   pause_state?: PauseState;
@@ -148,6 +158,14 @@ export interface TaskResult {
   result_url?: string;
   error?: ProblemJson;
   source_run_id?: string;
+  /** When the task row was created. Always set by the server. */
+  created_at?: string;
+  /** When the task last changed (e.g. a newer attempt settled). Always set by the server. */
+  updated_at?: string;
+  /**
+   * @deprecated Never set: results listings do not return per-task spend. Read per-attempt
+   * spend from `getTaskHistory()`, or the run total from `run.stats.spend`.
+   */
   spend?: TaskSpend;
 }
 

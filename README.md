@@ -225,15 +225,24 @@ const apiKey = "YOUR-API-KEY";
   for await (const row of job.run.results({ status: "successful" })) {
     console.log(row.task_id, row.url, row.result_url);
   }
-  // Or save every successful result to disk.
-  await job.run.downloadToDir("./results");
+  // Or save every successful result to disk. A result past the retention window comes back
+  // `expired` with no stored body: it is skipped, and `onSkip` hears about it. (With
+  // `status: "all"`, `failed` tasks are included and skipped the same way.)
+  const saved = await job.run.downloadToDir("./results", {
+    onSkip: (row) => console.log("skipped", row.taskId, row.status),
+  });
+  console.log(`saved ${saved} files`);
 
-  // Retry only the tasks that failed, inheriting the rest from the previous run.
-  await job.retryFailed();
+  // Retry only the tasks that failed, inheriting the rest from the previous run. With no
+  // failed task there is nothing to retry: the API answers 409 `no_matching_tasks`.
+  if (run.stats.failed > 0) {
+    await job.retryFailed();
+  }
 
   // Streaming batch: keep the job open, add tasks as they arrive, close when done.
   const streamingJob = await client.batch.submitOpen();
-  await streamingJob.addTasks([{ url: "https://example.com/3" }]);
+  // With an idempotencyKey, a retried call adds its tasks once, so the SDK retries it safely.
+  await streamingJob.addTasks([{ url: "https://example.com/3" }], { idempotencyKey: "chunk-1" });
   // Or close it as part of the last addTasks() call instead of a separate request:
   // await streamingJob.addTasks([...], { lastBatch: true });
   await streamingJob.close();
@@ -247,13 +256,14 @@ const apiKey = "YOUR-API-KEY";
 The client also wraps the rest of the API:
 
 - Jobs and runs: `getJob()`, `listJobs()` / `iterJobs()`, `job.delete()`, `job.runs()`, `getRun()`, `run.delete()`, `job.run.stop()`.
-- Results: `getResults()` / `iterResults()`, `downloadToMemory()`, `downloadTaskToFile()`, `getTaskHistory()`, and `getTaskContent()`. `getTaskContent()` returns the scraped page as a string, not JSON.
+- Results: `getResults()` / `iterResults()`, `downloadToMemory()`, `downloadTaskToFile()`, `getTaskHistory()`, `getTaskContent()` and `getTaskContentBytes()`. `getTaskContent()` returns the content as text; use `getTaskContentBytes()` (a `Buffer`) for binary results such as PDFs.
+- Retention: a successful result's body is visible for a window, 14 days by default (your account may use a different one). After that the row comes back with `status: "expired"` and no `result_url`, and `getTaskContent()` throws a `ZenRowsBatchError` with status 410 (`result_expired`). A `status: "successful"` filter still matches expired rows, which is why the bulk downloads skip them. Stored bodies are deleted after 30 days whatever the window, so an account without a visibility window still can't fetch a result older than that.
 - Scheduling: `submitScheduled()` with the `At`, `Rate` and `Calendar` builders, and `job.schedule.pause()` / `resume()` / `update()`.
-- Webhooks: `job.getWebhook()`, `job.setWebhook()`, `job.deleteWebhook()`, `testWebhook()`.
+- Webhooks: `job.getWebhook()`, `job.setWebhook(url, signature)`, `putJobWebhook(jobId, { url, signature })` (pass `signature` explicitly; if you leave it out, the SDK reads the current setting and sends it back, which keeps signing on when only the URL changes, but is a read then a write, so a change made by someone else in between is overwritten), `job.deleteWebhook()`, `testWebhook()`, and `verifyWebhook()` for your receiver (see below).
 - HMAC signing keys: `listHmacKeys()`, `rotateHmacKey()`, `finalizeHmacKey()`, `cancelHmacRotation()`.
 - CSV task uploads: `uploadCsv()`, then `submitRegular(undefined, fileInputId)`.
 - Results exports: `job.run.startExport()`, `waitForExport()`, `downloadAllResults()`.
-- Cost: `estimateCost(tasks, zenrowsParams)`.
+- Cost: `estimateCost(tasks, zenrowsParams)` prices each task on the job params overlaid with its own `zenrows_params`. A flag counts as on only when it is `true` or `"true"`, the values the API accepts; scrape params set directly on a task object (next to `url`) are ignored by the API, so they don't count.
 
 #### Failed runs and extensible values
 
@@ -264,7 +274,32 @@ const run = await client.batch.getRun(jobId, runId);
 if (run.data.failure_reason === "api_key_cap_reached") console.log(run.data.failure_detail);
 ```
 
-Enum-valued fields on responses (run, job, task and export `status`, `ingest_status`, `failure_reason`) are typed `Extensible<...>`: the known values plus any `string`, because the server may add values. The exported named types (`RunStatus`, `JobStatus`, `TaskStatus`, `ExportStatus`, `IngestStatus`, `RunFailureReason`) stay closed, so they still work as request input. Give switches on these fields a default branch; an exhaustive `switch` that assigns the leftover to `never` no longer compiles.
+Enum-valued fields on responses (run, job, task and export `status`, `ingest_status`, `failure_reason`, run `trigger`) are typed `Extensible<...>`: the known values plus any `string`, because the server may add values. The exported named types (`RunStatus`, `JobStatus`, `TaskStatus`, `ExportStatus`, `IngestStatus`, `RunFailureReason`, `RunTrigger`) stay closed, so they still work as request input. Give switches on these fields a default branch; an exhaustive `switch` that assigns the leftover to `never` no longer compiles.
+
+#### Verifying webhooks
+
+A job with a webhook gets one event when a run completes (`run.completed`) or fails on its own, for example when the account runs out of credits (`run.failed`). The event carries the run's stats. Stopping a run yourself sends no event. Delivery is best effort: a failed or slow delivery is retried with backoff for a limited time, so the same event can arrive more than once, and in rare cases not at all. Don't rely on the webhook alone; check the run's status when it matters. With `signature: true`, each delivery has an `X-Signature` header, `t=<unix seconds>,v1=<hex>,kid=<key id>`. `verifyWebhook()` checks it against the secret `rotateHmacKey()` returned (base64, shown once), and rejects deliveries more than 5 minutes old by default. A secret that isn't the 32-byte base64 key the API issued never verifies anything. Pass the raw body, before any JSON parsing:
+
+```js
+const express = require("express");
+const { verifyWebhook } = require("zenrows");
+
+// The `kid` and base64 `secret` that rotateHmacKey() returned. Load them from your secret store.
+const secrets = { "YOUR-KEY-ID": "YOUR-BASE64-SECRET" };
+
+const app = express();
+app.post("/webhooks/zenrows", express.raw({ type: "*/*" }), (req, res) => {
+  if (!verifyWebhook(req.body, req.get("X-Signature") ?? "", secrets)) {
+    return res.sendStatus(401);
+  }
+  const event = JSON.parse(req.body.toString("utf8"));
+  // Deliveries can repeat: deduplicate on the X-ZenRows-Event-Id header.
+  console.log(req.get("X-ZenRows-Event-Id"), event.event_type, event.stats);
+  res.sendStatus(204);
+});
+```
+
+During a key rotation, put both key ids in `secrets`; the header's `kid` picks the one to check.
 
 #### Extract in a batch
 
@@ -283,14 +318,15 @@ const job = await client.batch.submitRegular(
 );
 ```
 
-An Extract task's result carries two keys — `html` (the raw page) and `parsed` (the structured data). It costs the same as a regular task, so `estimateCost` prices it correctly. `extract_fields` is not supported in Batch yet.
+An Extract task's result carries two keys: `html` (the raw page) and `parsed` (the structured data). `estimateCost` prices it like a regular task; see the [pricing page](https://www.zenrows.com/pricing) for Extract's current rate.
 
 The batch client (`ZenRowsBatchClient`) also works standalone, without a `ZenRows` instance — matching the Go and Python SDKs' batch clients:
 
 ```javascript
 const { ZenRowsBatchClient } = require("zenrows");
 
-const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenrows.com/v1" }); // baseURL is optional
+// Both settings are optional. `timeout` is seconds per HTTP request; without it there is no limit.
+const batch = new ZenRowsBatchClient(apiKey, { baseURL: "https://async.api.zenrows.com/v1", timeout: 30 });
 ```
 
 ### Crawl

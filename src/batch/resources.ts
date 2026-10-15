@@ -26,6 +26,10 @@ interface BatchTaskLike {
   external_id?: string;
   metadata?: Record<string, unknown>;
   zenrows_params?: Record<string, unknown>;
+  /** HTTP method for the target fetch. Default `GET`. */
+  method?: "GET" | "POST";
+  /** Request body for a `POST` task. */
+  body?: unknown;
 }
 
 // ======================= specific runs =======================
@@ -430,9 +434,14 @@ export class JobRef {
     return this.rerun({ status, idempotencyKey: options.idempotencyKey });
   }
 
+  /**
+   * Append tasks to an open job. With an `idempotencyKey`, a retry of the same call (same key,
+   * same body) returns the original answer instead of adding the tasks again, so the SDK can
+   * retry it safely on a transient failure. Without one, every call appends its tasks.
+   */
   addTasks(
     tasks: BatchTaskLike[],
-    options: { lastBatch?: boolean } = {},
+    options: { lastBatch?: boolean; idempotencyKey?: string } = {},
   ): Promise<{
     accepted_tasks: number;
     job_status: Extensible<JobStatus>;
