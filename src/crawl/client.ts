@@ -247,8 +247,9 @@ export class ZenRowsCrawlClient {
 
   /**
    * Poll until the crawl ends (any status but `running`) or `timeout` seconds pass, and return
-   * it, without results. A `failed` crawl resolves too: read `error`. On timeout the crawl is
-   * returned with status `running` and keeps running.
+   * it, without results. A `failed` crawl resolves too: read `error`. So does a crawl that
+   * `stopped` because credits ran out or the API key hit a credit cap; `error` says which. On
+   * timeout the crawl is returned with status `running` and keeps running.
    */
   async wait(crawlId: string, options: WaitForCrawlOptions = {}): Promise<Crawl> {
     const deadline = Date.now() + (options.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS) * 1000;

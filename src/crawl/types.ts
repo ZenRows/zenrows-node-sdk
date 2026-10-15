@@ -2,9 +2,16 @@ import type { Extensible } from "../batch/types.js";
 
 /** `running` until the crawl ends; the other three are terminal. */
 export type CrawlStatus = "running" | "completed" | "stopped" | "failed";
-/** What ended a crawl early: a limit (`status: completed`) or `stop()` (`status: stopped`). */
+/**
+ * What ended a crawl early: a limit (`status: completed`) or `stop()` (`status: stopped`). Absent on a
+ * crawl that stopped because the account ran out of credits or the API key hit a credit cap: that one
+ * carries `error` instead.
+ */
 export type CrawlStopReason = "max_items" | "max_pages" | "user";
-/** Why a crawl failed (`status: failed`). */
+/**
+ * Why a crawl failed (`status: failed`), or why it stopped on credits: `insufficient_credits` and
+ * `api_key_cap_reached` come with `status: stopped`, and the pages fetched before that stay readable.
+ */
 export type CrawlErrorCode =
   | "insufficient_credits"
   | "api_key_cap_reached"
@@ -25,7 +32,11 @@ export interface CrawlCoverage {
   items_found: number;
 }
 
-/** Why a crawl failed. Part of the crawl, not an error response. */
+/**
+ * Why a crawl failed, or why it stopped because the account ran out of credits or the API key hit a
+ * credit cap. Present when `status` is `failed`, and when it is `stopped` with `code`
+ * `insufficient_credits` or `api_key_cap_reached`. Part of the crawl, not an error response.
+ */
 export interface CrawlRunError {
   code: Extensible<CrawlErrorCode>;
   detail: string;
