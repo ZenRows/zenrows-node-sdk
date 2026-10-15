@@ -693,21 +693,21 @@ await check(
 );
 await cap.close();
 
-// ---------- 19-21: a failed crawl, results after a stop, the documented defaults ----------
+// ---------- 19-21: patterns that match nothing, results after a stop, the documented defaults ----------
 await liveCheck(
   "19",
-  "Failed crawl",
-  "a crawl that keeps nothing ends failed (no_items_found); wait returns it, not raises",
+  "Patterns match nothing",
+  "a crawl whose patterns match nothing ends completed with 0 results and no error",
   async () => {
     F = await create({ url: CRAWL_URL, depth: 1, includePatterns: [H.NO_MATCH] });
     const w = await client.wait(F.crawl_id);
+    const urls = [];
+    for await (const x of client.results(F.crawl_id)) urls.push(x.url);
     const ok =
-      w.status === "failed" &&
-      w.error?.code === "no_items_found" &&
-      typeof w.error?.detail === "string";
+      w.status === "completed" && !w.error && w.coverage.items_found === 0 && urls.length === 0;
     return {
       status: passIf(ok),
-      actual: `${F.crawl_id}: ${w.status}; error ${JSON.stringify(w.error)}; returned, no exception`,
+      actual: `${F.crawl_id}: ${w.status}; items_found ${w.coverage.items_found}, ${urls.length} results; error ${JSON.stringify(w.error ?? null)}`,
       evidence: JSON.stringify(w),
     };
   },
