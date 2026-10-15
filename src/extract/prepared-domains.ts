@@ -53,6 +53,14 @@ export class ZenRowsPreparedDomainError extends Error {
   }
 }
 
+/** @internal Rejects an empty or whitespace-only domain: it would request the list endpoint
+ * and read its answer as a status. */
+export function checkDomain(domain: unknown): void {
+  if (typeof domain !== "string" || domain.trim() === "") {
+    throw new TypeError("domain must be a non-empty string");
+  }
+}
+
 async function readJson(response: Response): Promise<Record<string, unknown> | undefined> {
   try {
     const body: unknown = await response.json();

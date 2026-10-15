@@ -165,4 +165,26 @@ describe("prepared domains", () => {
     expect(err.code).toBeUndefined();
     expect(err.problem).toBeUndefined();
   });
+  test("an empty or whitespace-only domain rejects with a TypeError before any request", async () => {
+    const seen = stub(200, preparing);
+
+    for (const domain of ["", "   ", "\t\n"]) {
+      await expect(client.preparedDomainStatus(domain)).rejects.toThrow(TypeError);
+      await expect(client.prepareDomain(domain, ["https://www.example.com/"])).rejects.toThrow(
+        TypeError,
+      );
+    }
+
+    expect(seen).toHaveLength(0);
+  });
+
+  test("a 503 is not retried even with retries configured", async () => {
+    const retrying = new ZenRows(apiKey, { retries: 2 });
+    const seen = stub(503, problem(503, "overloaded"));
+
+    const error = await retrying.preparedDomainStatus("www.example.com").catch((e: unknown) => e);
+
+    expect((error as ZenRowsPreparedDomainError).code).toBe("overloaded");
+    expect(seen).toHaveLength(1);
+  });
 });

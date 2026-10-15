@@ -3,7 +3,11 @@ import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRowsBatchClient } from "./batch/client.js";
 import { type CrawlClientConfig, ZenRowsCrawlClient } from "./crawl/client.js";
-import { type PreparedDomainStatus, preparedDomainsRequest } from "./extract/prepared-domains.js";
+import {
+  type PreparedDomainStatus,
+  checkDomain,
+  preparedDomainsRequest,
+} from "./extract/prepared-domains.js";
 
 export * from "./batch/client.js";
 export * from "./batch/errors.js";
@@ -237,11 +241,12 @@ export class ZenRows {
    * `preparedDomainStatus(domain)` until `status` is no longer `"preparing"`. These endpoints
    * don't fetch pages and cost no credits.
    *
-   * Rejects with `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400
-   * `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or 503 `overloaded` /
+   * Rejects with a `TypeError` for an empty `domain`, before any request, and with
+   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400 `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or 503 `overloaded` /
    * `disabled`.
    */
-  public prepareDomain(domain: string, exampleUrls: string[]): Promise<PreparedDomainStatus> {
+  public async prepareDomain(domain: string, exampleUrls: string[]): Promise<PreparedDomainStatus> {
+    checkDomain(domain);
     return preparedDomainsRequest(`${API_URL}extract/prepared-domains`, {
       method: "POST",
       headers: { ...this.preparedDomainsHeaders(), "Content-Type": "application/json" },
@@ -254,10 +259,12 @@ export class ZenRows {
    * and return the parsed status object. `status` is `"preparing"`, `"ready"` or `"failed"`;
    * a failed preparation carries a `failure` with `code`, `detail` and `slot_consumed`.
    *
-   * Rejects with `ZenRowsPreparedDomainError` on a non-2xx answer, for example 404
-   * `not_found` when your account never submitted `domain`.
+   * Rejects with a `TypeError` for an empty `domain`, before any request, and with
+   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 404 `not_found` when your
+   * account never submitted `domain`.
    */
-  public preparedDomainStatus(domain: string): Promise<PreparedDomainStatus> {
+  public async preparedDomainStatus(domain: string): Promise<PreparedDomainStatus> {
+    checkDomain(domain);
     return preparedDomainsRequest(
       `${API_URL}extract/prepared-domains/${encodeURIComponent(domain)}`,
       { method: "GET", headers: this.preparedDomainsHeaders() },
