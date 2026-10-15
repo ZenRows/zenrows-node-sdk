@@ -16,6 +16,7 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
   - [Adaptive Stealth Mode](#adaptive-stealth-mode)
   - [POST Requests](#post-requests)
   - [Extract](#extract)
+    - [Preparing a domain](#preparing-a-domain)
   - [Batch](#batch)
     - [Failed runs and extensible values](#failed-runs-and-extensible-values)
     - [Extract in a batch](#extract-in-a-batch)
@@ -197,13 +198,44 @@ const url = "https://www.zenrows.com/";
 
 `extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
 
-Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with `POST /v1/extract/prepared-domains`, or pass `fallbackToAutoparse: true` to retry with deprecated autoparse. The legacy `402` with `code: "AUTH010"` is handled the same way. By default `extract()` returns both error responses to you as is, without a second request.
+Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with `POST /v1/extract/prepared-domains` (`client.prepareDomain()`, see below), or pass `fallbackToAutoparse: true` to retry with deprecated autoparse. The legacy `402` with `code: "AUTH010"` is handled the same way. By default `extract()` returns both error responses to you as is, without a second request.
 
 ```javascript
 // Opt in to one retry with the deprecated autoparse on REQS007 / AUTH010.
 // The retry is a second, separately charged request.
 const response = await client.extract(url, { fallbackToAutoparse: true });
 ```
+
+#### Preparing a domain
+
+`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs, one per kind of page you want to extract. These calls cost no credits.
+
+Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`:
+
+```javascript
+import { ZenRows, ZenRowsPreparedDomainError } from "zenrows";
+
+const client = new ZenRows("YOUR-API-KEY");
+
+try {
+  let status = await client.prepareDomain("www.scrapingcourse.com", [
+    "https://www.scrapingcourse.com/ecommerce/",
+  ]);
+  while (status.status === "preparing") {
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+    status = await client.preparedDomainStatus("www.scrapingcourse.com");
+  }
+  console.log(status.status); // "ready" or "failed" (see status.failure)
+} catch (error) {
+  if (error instanceof ZenRowsPreparedDomainError) {
+    // e.g. 409 in_progress, 429 out_of_allowance, 503 overloaded
+    console.error(error.status, error.code, error.detail);
+  }
+  throw error;
+}
+```
+
+Both methods reject with `ZenRowsPreparedDomainError` on an error answer, with `status`, `code` (`invalid_argument`, `not_found`, `in_progress`, `out_of_allowance`, `overloaded`, `disabled`, ...), `detail`, `reason`, `retryAfter` and the whole `problem` body. See the [Extract endpoints docs](https://docs.zenrows.com/extract/endpoints) for every status and failure code.
 
 A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup).
 

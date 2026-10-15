@@ -3,6 +3,7 @@ import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRowsBatchClient } from "./batch/client.js";
 import { type CrawlClientConfig, ZenRowsCrawlClient } from "./crawl/client.js";
+import { type PreparedDomainStatus, preparedDomainsRequest } from "./extract/prepared-domains.js";
 
 export * from "./batch/client.js";
 export * from "./batch/errors.js";
@@ -14,6 +15,11 @@ export type * from "./batch/types.js";
 export * from "./crawl/client.js";
 export { CRAWL_NOT_ENABLED_CODE, ZenRowsCrawlError } from "./crawl/errors.js";
 export type * from "./crawl/types.js";
+export {
+  type PreparedDomainProblem,
+  type PreparedDomainStatus,
+  ZenRowsPreparedDomainError,
+} from "./extract/prepared-domains.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -179,7 +185,8 @@ export class ZenRows {
    * Extract works on any prepared domain (you can prepare one yourself with
    * `POST /v1/extract/prepared-domains`), with any active API key. A 403 with
    * `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with
-   * `POST /v1/extract/prepared-domains`, or pass `fallbackToAutoparse: true` to retry with
+   * `POST /v1/extract/prepared-domains` (`prepareDomain()`, then check it with
+   * `preparedDomainStatus()`), or pass `fallbackToAutoparse: true` to retry with
    * deprecated autoparse. The legacy domain-not-enabled error is a 402 with
    * `code: "AUTH010"`. By default both error responses are returned to you as is.
    *
@@ -215,6 +222,50 @@ export class ZenRows {
     }
 
     return response;
+  }
+
+  /**
+   * Submit `domain` for Extract preparation (`POST /v1/extract/prepared-domains`) and return
+   * the parsed status object the API answers with `202`: `domain`, `status` (`"preparing"`,
+   * `"ready"` or `"failed"`), `state`, `submitted_at`, `updated_at`.
+   *
+   * `domain` is the domain without a scheme. `exampleUrls` are 1 to 5 URLs on that domain,
+   * one per kind of page you want to extract. Submitting a domain that is already prepared
+   * returns its current status instead of starting a new run.
+   *
+   * Preparation takes minutes. This method does not wait for it: call
+   * `preparedDomainStatus(domain)` until `status` is no longer `"preparing"`. These endpoints
+   * don't fetch pages and cost no credits.
+   *
+   * Rejects with `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400
+   * `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or 503 `overloaded` /
+   * `disabled`.
+   */
+  public prepareDomain(domain: string, exampleUrls: string[]): Promise<PreparedDomainStatus> {
+    return preparedDomainsRequest(`${API_URL}extract/prepared-domains`, {
+      method: "POST",
+      headers: { ...this.preparedDomainsHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ domain, example_urls: exampleUrls }),
+    });
+  }
+
+  /**
+   * Read the preparation status of `domain` (`GET /v1/extract/prepared-domains/{domain}`)
+   * and return the parsed status object. `status` is `"preparing"`, `"ready"` or `"failed"`;
+   * a failed preparation carries a `failure` with `code`, `detail` and `slot_consumed`.
+   *
+   * Rejects with `ZenRowsPreparedDomainError` on a non-2xx answer, for example 404
+   * `not_found` when your account never submitted `domain`.
+   */
+  public preparedDomainStatus(domain: string): Promise<PreparedDomainStatus> {
+    return preparedDomainsRequest(
+      `${API_URL}extract/prepared-domains/${encodeURIComponent(domain)}`,
+      { method: "GET", headers: this.preparedDomainsHeaders() },
+    );
+  }
+
+  private preparedDomainsHeaders(): Record<string, string> {
+    return { "X-API-Key": this.apiKey, "User-Agent": `zenrows/${packageJson.version} node` };
   }
 
   public post(
