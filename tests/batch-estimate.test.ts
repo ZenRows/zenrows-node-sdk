@@ -33,10 +33,46 @@ describe("estimateCost", () => {
     expect(result.breakdown[0]?.tier).toBe("auto");
   });
 
-  test("truthy string spellings ('1', 'yes', 'ON') count as on", () => {
-    expect(estimateCost([{ zenrows_params: { js_render: "yes" } }]).min).toBe(5);
-    expect(estimateCost([{ zenrows_params: { premium_proxy: "1" } }]).min).toBe(10);
-    expect(estimateCost([{ zenrows_params: { js_render: "ON" } }]).min).toBe(5);
+  test('a flag is on for JSON true or the string "true" in any case', () => {
+    expect(estimateCost([{ zenrows_params: { js_render: "true" } }]).min).toBe(5);
+    expect(estimateCost([{ zenrows_params: { js_render: "TRUE" } }]).min).toBe(5);
+    expect(estimateCost([{ zenrows_params: { premium_proxy: "True" } }]).min).toBe(10);
+  });
+
+  test("spellings the API rejects at submit count as off", () => {
+    // The API accepts only true/false for these flags and answers 400 for anything else,
+    // so none of these would ever bill as JS rendering or premium proxy.
+    for (const value of ["1", "yes", "on", " true", 1, 2]) {
+      expect(estimateCost([{ zenrows_params: { js_render: value } }]).min).toBe(1);
+      expect(estimateCost([{ zenrows_params: { premium_proxy: value } }]).min).toBe(1);
+    }
+  });
+
+  test("mode counts as auto only for the exact value the API accepts", () => {
+    expect(estimateCost([{ zenrows_params: { mode: "auto" } }]).max).toBe(25);
+    expect(estimateCost([{ zenrows_params: { mode: "AUTO" } }]).max).toBe(1);
+  });
+
+  test("scrape params set flat on a task are not counted (the API ignores them)", () => {
+    expect(estimateCost([{ url: "https://a.com", js_render: true }]).min).toBe(1);
+    expect(estimateCost([{ url: "https://a.com", premium_proxy: "true" }], {}).min).toBe(1);
+  });
+
+  test("job params, then the task's zenrows_params", () => {
+    const result = estimateCost(
+      [
+        "https://a.com",
+        { url: "https://b.com", zenrows_params: { premium_proxy: true } },
+        { url: "https://c.com", zenrows_params: { js_render: "false" } },
+      ],
+      { js_render: true },
+    );
+    expect(result.breakdown).toEqual([
+      { tier: "base", count: 1, unitMin: 1, unitMax: 1 },
+      { tier: "js_render", count: 1, unitMin: 5, unitMax: 5 },
+      { tier: "js_render+premium_proxy", count: 1, unitMin: 25, unitMax: 25 },
+    ]);
+    expect(result.min).toBe(31);
   });
 
   test("falsy string spellings and zero do not count as on", () => {
