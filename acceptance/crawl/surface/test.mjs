@@ -55,7 +55,7 @@ record(
 const subs = [
   ['const apiKey = "YOUR-API-KEY";', "const apiKey = process.env.ZENROWS_API_KEY;", "set the key"],
   [
-    'url: "https://example.com/products/"',
+    'url: "https://www.scrapingcourse.com/ecommerce/"',
     `url: ${JSON.stringify(CRAWL_URL)}`,
     "start URL → CRAWL_URL",
   ],
@@ -72,6 +72,15 @@ const subs = [
     "no html",
   ],
 ];
+if (API_BASE !== "https://api.zenrows.com/v1") {
+  // The quickstart leaves the base URL out, so it would reach production
+  // whatever CRAWL_API_BASE says. Point it where the rest of the run goes.
+  subs.push([
+    "const client = new ZenRows(apiKey);",
+    `const client = new ZenRows(apiKey, { crawl: { baseURL: ${JSON.stringify(API_BASE)} } });`,
+    "base URL → CRAWL_API_BASE",
+  ]);
+}
 let quick = block ?? "";
 const applied = [];
 for (const [from, to, why] of subs) {
