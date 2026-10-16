@@ -198,13 +198,33 @@ const url = "https://www.zenrows.com/";
 
 `extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
 
-Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with `POST /v1/extract/prepared-domains` (`client.prepareDomain()`, see below), or pass `fallbackToAutoparse: true` to retry with deprecated autoparse. The legacy `402` with `code: "AUTH010"` is handled the same way. By default `extract()` returns both error responses to you as is, without a second request.
+Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means Extract can't extract this page. Check `reason` in the problem body when present; older responses may not carry it:
+
+- `domain_not_prepared`: prepare the domain with `client.prepareDomain()` (see below), poll `client.preparedDomainStatus()` until `status` is `"ready"`, then retry.
+- `page_not_recognised`: the domain is served, but this page isn't one Extract extracts (a home, search, login or category page). Try a product, article or listing page, or retry once in a few minutes. Preparing the domain again changes nothing.
+- `domain_not_enabled`: preparing doesn't help. Use `css_extractor`, or contact support.
 
 ```javascript
-// Opt in to one retry with the deprecated autoparse on REQS007 / AUTH010.
-// The retry is a second, separately charged request.
-const response = await client.extract(url, { fallbackToAutoparse: true });
+const response = await client.extract(url);
+if (response.status === 403) {
+  const problem = await response.json();
+  if (problem.code === "REQS007") {
+    switch (problem.reason) { // undefined on older responses
+      case "domain_not_prepared":
+        // client.prepareDomain(...), then poll client.preparedDomainStatus(...)
+        break;
+      case "page_not_recognised":
+        // try a product, article or listing page
+        break;
+      case "domain_not_enabled":
+        // use css_extractor, or contact support
+        break;
+    }
+  }
+}
 ```
+
+The legacy `402` with `code: "AUTH010"` means the domain isn't enabled. `extract()` returns both error responses to you as is, in one request, and never retries them with autoparse. `fallbackToAutoparse` is deprecated and has no effect; passing `true` emits a `DeprecationWarning` once per process.
 
 #### Preparing a domain
 

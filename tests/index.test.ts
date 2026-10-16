@@ -138,7 +138,7 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.get("extract")).toBe("native");
   });
 
-  describe("extract() Autoparse fallback", () => {
+  describe("extract() never falls back to autoparse", () => {
     // Counts every request to the API and answers each one from `responses` in order.
     const answer = (responses: Array<{ status: number; body: JsonBodyType }>) => {
       const urls: URL[] = [];
@@ -153,7 +153,11 @@ describe("ZenRows Client Get", () => {
     };
 
     const notReady = [
-      { name: "REQS007", status: 403, body: { code: "REQS007", title: "Domain not prepared" } },
+      {
+        name: "REQS007",
+        status: 403,
+        body: { code: "REQS007", reason: "domain_not_prepared", title: "Domain not prepared" },
+      },
       {
         name: "the legacy AUTH010",
         status: 402,
@@ -161,8 +165,24 @@ describe("ZenRows Client Get", () => {
       },
     ];
 
+    // First in the block: the warning is emitted once per process.
+    test("fallbackToAutoparse: true emits one DeprecationWarning per process", async () => {
+      const emit = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+      answer([{ status: 403, body: { code: "REQS007" } }]);
+
+      await client.extract(url, { fallbackToAutoparse: true });
+      await client.extract(url, { fallbackToAutoparse: true });
+
+      expect(emit).toHaveBeenCalledTimes(1);
+      const [message, options] = emit.mock.calls[0] ?? [];
+      expect(String(message)).toContain("prepareDomain()");
+      expect(options).toMatchObject({ type: "DeprecationWarning" });
+      emit.mockRestore();
+    });
+
     for (const { name, status, body } of notReady) {
-      test(`returns ${name} as is, without a second request, by default`, async () => {
+      test(`returns ${name} as is, in one request`, async () => {
+        const emit = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
         const urls = answer([
           { status, body },
           { status: 200, body: [{ found: "via autoparse" }] },
@@ -174,9 +194,11 @@ describe("ZenRows Client Get", () => {
         expect(await response.json()).toEqual(body);
         expect(urls).toHaveLength(1);
         expect(urls[0]?.searchParams.has("autoparse")).toBe(false);
+        expect(emit).not.toHaveBeenCalled();
+        emit.mockRestore();
       });
 
-      test(`retries exactly once with autoparse on ${name} when fallbackToAutoparse is true`, async () => {
+      test(`returns ${name} as is, in one request, with the deprecated fallbackToAutoparse`, async () => {
         const urls = answer([
           { status, body },
           { status: 200, body: [{ found: "via autoparse" }] },
@@ -184,74 +206,18 @@ describe("ZenRows Client Get", () => {
 
         const response = await client.extract(url, { fallbackToAutoparse: true });
 
-        expect(response.status).toBe(200);
-        expect(urls).toHaveLength(2);
-        expect(urls[1]?.searchParams.get("autoparse")).toBe("true");
-        expect(urls[1]?.searchParams.has("extract")).toBe(false);
-        expect(urls[1]?.searchParams.get("mode")).toBe("auto");
+        expect(response.status).toBe(status);
+        expect(urls).toHaveLength(1);
+        expect(urls[0]?.searchParams.has("autoparse")).toBe(false);
       });
     }
 
-    test("does not retry a second time when the autoparse fallback fails too", async () => {
-      const urls = answer([{ status: 403, body: { code: "REQS007" } }]);
+    test("the REQS007 reason is readable from the response body", async () => {
+      answer([{ status: 403, body: { code: "REQS007", reason: "page_not_recognised" } }]);
 
-      const response = await client.extract(url, { fallbackToAutoparse: true });
+      const response = await client.extract(url);
 
-      expect(response.status).toBe(403);
-      expect(urls).toHaveLength(2);
-    });
-
-    test("the fallback request also skips Adaptive Stealth Mode with premium_proxy", async () => {
-      const urls = answer([
-        { status: 403, body: { code: "REQS007" } },
-        { status: 200, body: [{ found: "via autoparse" }] },
-      ]);
-
-      const response = await client.extract(url, {
-        premium_proxy: true,
-        fallbackToAutoparse: true,
-      });
-
-      expect(response.status).toBe(200);
-      expect(urls).toHaveLength(2);
-      expect(urls[0]?.searchParams.has("mode")).toBe(false);
-      expect(urls[1]?.searchParams.has("mode")).toBe(false);
-      expect(urls[1]?.searchParams.get("autoparse")).toBe("true");
-    });
-
-    const otherErrors = [
-      { name: "a 403 that isn't REQS007 (a bad key)", status: 403, body: { code: "AUTH002" } },
-      { name: "a 402 that isn't AUTH010 (out of credits)", status: 402, body: { code: "AUTH004" } },
-      { name: "REQS007 on a 400", status: 400, body: { code: "REQS007" } },
-      { name: "a 404", status: 404, body: {} },
-    ];
-
-    for (const { name, status, body } of otherErrors) {
-      for (const fallbackToAutoparse of [false, true]) {
-        test(`never falls back for ${name} (fallbackToAutoparse: ${fallbackToAutoparse})`, async () => {
-          const urls = answer([
-            { status, body },
-            { status: 200, body: [] },
-          ]);
-
-          const response = await client.extract(url, { fallbackToAutoparse });
-
-          expect(response.status).toBe(status);
-          expect(urls).toHaveLength(1);
-        });
-      }
-    }
-
-    test("does not retry for non-auto modes, even with fallbackToAutoparse", async () => {
-      const urls = answer([
-        { status: 402, body: { code: "AUTH010" } },
-        { status: 200, body: [] },
-      ]);
-
-      const response = await client.extract(url, { extract: "native", fallbackToAutoparse: true });
-
-      expect(response.status).toBe(402);
-      expect(urls).toHaveLength(1);
+      expect(((await response.json()) as { reason?: string }).reason).toBe("page_not_recognised");
     });
   });
 

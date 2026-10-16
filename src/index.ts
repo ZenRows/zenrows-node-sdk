@@ -47,21 +47,18 @@ function extractWireMode(config: ZenRowsConfig, adaptiveStealth: boolean): "auto
   return "auto";
 }
 
-/** True when a response says Extract can't serve the target domain yet: a 403
- * carrying REQS007 (domain not prepared yet) or a 402 carrying the legacy
- * domain-not-enabled code AUTH010. Any other 402/403 (no credits, bad key) is
- * not. Reads via `.clone()` so the original response body is left unconsumed
- * for the caller. */
-async function isExtractDomainNotReady(response: Response): Promise<boolean> {
-  const expected =
-    response.status === 403 ? "REQS007" : response.status === 402 ? "AUTH010" : undefined;
-  if (!expected) return false;
-  try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toUpperCase() === expected;
-  } catch {
-    return false;
-  }
+let fallbackDeprecationWarned = false;
+
+/** Warns once per process that `fallbackToAutoparse` no longer does anything. */
+function warnFallbackDeprecated(): void {
+  if (fallbackDeprecationWarned || typeof process === "undefined" || !process.emitWarning) return;
+  fallbackDeprecationWarned = true;
+  process.emitWarning(
+    "fallbackToAutoparse is deprecated and has no effect: extract() no longer retries with " +
+      "autoparse. On a 403 REQS007, check `reason` in the problem body; for " +
+      "domain_not_prepared, prepare the domain with prepareDomain().",
+    { type: "DeprecationWarning", code: "ZENROWS_FALLBACK_TO_AUTOPARSE" },
+  );
 }
 
 /** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
@@ -188,15 +185,19 @@ export class ZenRows {
    *
    * Extract works on any prepared domain (you can prepare one yourself with
    * `POST /v1/extract/prepared-domains`), with any active API key. A 403 with
-   * `code: "REQS007"` means the domain isn't prepared for Extract yet: prepare it with
-   * `POST /v1/extract/prepared-domains` (`prepareDomain()`, then check it with
-   * `preparedDomainStatus()`), or pass `fallbackToAutoparse: true` to retry with
-   * deprecated autoparse. The legacy domain-not-enabled error is a 402 with
-   * `code: "AUTH010"`. By default both error responses are returned to you as is.
+   * `code: "REQS007"` means Extract can't extract this page. Check `reason` in the problem
+   * body (`(await response.json()).reason`) when present; older responses may not carry it:
    *
-   * `fallbackToAutoparse: true` (opt-in, default `false`) makes `extract: "auto"` retry
-   * once with `autoparse: true` on either code instead of returning the error response.
-   * Autoparse is deprecated, and the retry is a second, separately charged request.
+   * - `domain_not_prepared`: prepare the domain with `prepareDomain()`, poll
+   *   `preparedDomainStatus()` until `status` is `"ready"`, then retry.
+   * - `page_not_recognised`: the domain is served, but this page isn't one Extract extracts
+   *   (a home, search, login or category page). Try a product, article or listing page, or
+   *   retry once in a few minutes. Preparing the domain again changes nothing.
+   * - `domain_not_enabled`: preparing doesn't help. Use `css_extractor`, or contact support.
+   *
+   * The legacy domain-not-enabled error is a 402 with `code: "AUTH010"`. Both error
+   * responses are returned to you as is, in one request; extract() never retries them with
+   * autoparse.
    *
    * A 422 with `code: "no_data_extracted"` means Extract knows this kind of page but
    * found no data on it. It is not charged and is never retried; check it with
@@ -206,7 +207,8 @@ export class ZenRows {
     url: string,
     config?: ZenRowsConfig & {
       extract?: ExtractMode;
-      /** Opt-in: retry once with deprecated autoparse on REQS007 / AUTH010. Default `false`. */
+      /** @deprecated Has no effect: extract() no longer retries with autoparse. Passing
+       * `true` emits a `DeprecationWarning` once per process. */
       fallbackToAutoparse?: boolean;
       adaptiveStealth?: boolean;
     },
@@ -218,14 +220,9 @@ export class ZenRows {
       adaptiveStealth = true,
       ...rest
     } = config ?? {};
+    if (fallbackToAutoparse) warnFallbackDeprecated();
     const mode = extractWireMode(rest, adaptiveStealth);
-    const response = await this.fetch(url, { ...rest, extract, mode }, opts);
-
-    if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
-      return this.fetch(url, { ...rest, autoparse: true, mode }, opts);
-    }
-
-    return response;
+    return this.fetch(url, { ...rest, extract, mode }, opts);
   }
 
   /**
