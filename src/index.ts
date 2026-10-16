@@ -3,6 +3,12 @@ import fetchRetry from "fetch-retry";
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRowsBatchClient } from "./batch/client.js";
 import { type CrawlClientConfig, ZenRowsCrawlClient } from "./crawl/client.js";
+import {
+  DEFAULT_RETRIES,
+  DEFAULT_RETRY_BUDGET_SECONDS,
+  DEFAULT_RETRY_MAX_WAIT_SECONDS,
+  retryPolicy,
+} from "./retry.js";
 
 export * from "./batch/client.js";
 export * from "./batch/errors.js";
@@ -56,7 +62,7 @@ async function isExtractDomainNotReady(response: Response): Promise<boolean> {
 
 /** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
  * of page but found no data on it. The request is not charged and the client never
- * retries it, since another try returns the same answer. Reads via `.clone()`, so the
+ * retries it (no 422 is retried), since another try returns the same answer. Reads via `.clone()`, so the
  * original response body is left unconsumed for the caller. */
 export async function isNoDataExtracted(response: Response): Promise<boolean> {
   if (response.status !== 422) return false;
@@ -70,7 +76,16 @@ export async function isNoDataExtracted(response: Response): Promise<boolean> {
 
 interface ClientConfig {
   concurrency?: number;
+  /**
+   * Retries for `fetch()`, `extract()` and `post()` after a 429, 502, 503 or 504 (never
+   * charged) or a network error before any response. Default 2; 0 turns retries off. A timeout
+   * or abort is never retried: the server may still finish the request and charge it.
+   */
   retries?: number;
+  /** The longest one backoff wait may be, in seconds. Default 30. A `Retry-After` is honoured up to 30 s. */
+  retryMaxWait?: number;
+  /** No retry starts once the time spent plus the next wait would pass this, in seconds. Default 90. */
+  retryBudget?: number;
   /** Config for `client.crawl`: its own `baseURL`, `retries` and `timeout`. */
   crawl?: CrawlClientConfig;
 }
@@ -114,31 +129,11 @@ export class ZenRows {
     this.clientConfig = clientConfig;
     this.batch = new ZenRowsBatchClient(apiKey);
     this.crawl = new ZenRowsCrawlClient(apiKey, clientConfig.crawl);
-    const retries = this.clientConfig.retries ?? 0;
 
     this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);
 
-    this.fetchWithRetry = fetchRetry(fetch, {
-      retryDelay: (attempt) => 2 ** attempt * 1000,
-      // retryOn: [422, 503, 504],
-      retryOn: async (attempt, error, response) => {
-        if (attempt >= retries) {
-          return false;
-        }
-
-        if (error !== null || response?.status === 503 || response?.status === 504) {
-          return true;
-        }
-
-        // A 422 is usually a failure to get the target's content and worth another
-        // try, except Extract's `no_data_extracted`, which is a final answer.
-        if (response?.status === 422) {
-          return !(await isNoDataExtracted(response));
-        }
-
-        return false;
-      },
-    });
+    // The retry policy is per request (see `worker`), so this only wraps fetch.
+    this.fetchWithRetry = fetchRetry(fetch);
   }
 
   /**
@@ -292,7 +287,16 @@ export class ZenRows {
       }
     }
 
-    const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, fetchOptions);
+    const { retryOn, retryDelay } = retryPolicy({
+      retries: this.clientConfig.retries ?? DEFAULT_RETRIES,
+      retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,
+      retryBudget: this.clientConfig.retryBudget ?? DEFAULT_RETRY_BUDGET_SECONDS,
+    });
+    const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, {
+      ...fetchOptions,
+      retryOn,
+      retryDelay,
+    });
 
     return response;
   }

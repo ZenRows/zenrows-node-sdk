@@ -23,7 +23,7 @@ describe("422 no_data_extracted", () => {
     expect(await response.json()).toEqual(noData);
   });
 
-  test("any other 422 is still retried", async () => {
+  test("any other 422 is not retried either", async () => {
     let fetchCount = 0;
     server.use(
       http.get("https://api.zenrows.com/v1/", () => {
@@ -36,7 +36,7 @@ describe("422 no_data_extracted", () => {
     const response = await client.fetch("https://example.com");
 
     expect(response.status).toBe(422);
-    expect(fetchCount).toBe(2);
+    expect(fetchCount).toBe(1);
   });
 
   test("isNoDataExtracted matches only a 422 with that code, in any case", async () => {

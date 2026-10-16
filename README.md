@@ -45,7 +45,12 @@ Start using the API by [creating your API Key](https://app.zenrows.com/register?
 
 The SDK uses the official [fetch api](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html) for HTTP requests. The client's response will be a [`Response`](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html#response).
 
-It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to automatically retry failed requests (network errors and status codes 422, 503 and 504, except Extract's `422 no_data_extracted`). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
+It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to retry failed requests: a network error before any response, and status codes 429, 502, 503 and 504, which are never charged. No other status is retried, `422` included. A timeout or abort is never retried, because the server may still finish the request and charge it.
+
+- `retries`: retries after the first try. Default `2`; set `retries: 0` to turn retries off.
+- Between tries the client waits the `Retry-After` the server sends (at most 30 seconds), or else a random time between 0.25 seconds and `min(retryMaxWait, 2^attempt)` seconds (full jitter).
+- `retryMaxWait`: the longest one random wait may be, in seconds. Default `30`.
+- `retryBudget`: no retry starts once the time spent plus the next wait would pass this, in seconds. Default `90`.
 
 > `client.fetch()` is the primary method for the main page-scraping product. `client.get()` still works and is kept as a deprecated alias — new code should call `fetch()`.
 
