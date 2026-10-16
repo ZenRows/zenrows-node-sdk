@@ -17,6 +17,7 @@ import type {
   StartExportResponse,
   SubmitJobResponse,
   TaskHistoryResponse,
+  TaskMethod,
   TaskResult,
   WebhookConfig,
 } from "./types.js";
@@ -26,6 +27,10 @@ interface BatchTaskLike {
   external_id?: string;
   metadata?: Record<string, unknown>;
   zenrows_params?: Record<string, unknown>;
+  /** HTTP method for the target fetch. Default `GET`. */
+  method?: TaskMethod;
+  /** Request body for a `POST` task: a JSON value or a string, up to 16 KiB. */
+  body?: unknown;
 }
 
 // ======================= specific runs =======================
@@ -96,6 +101,8 @@ export class RunRef {
       failureStatuses?: Set<string>;
       timeout?: number;
       pollInterval?: number;
+      /** Keep polling while the run is paused instead of throwing `RunPausedError`. */
+      waitWhilePaused?: boolean;
     } = {},
   ): Promise<RunHandle> {
     const run = await this.#client.waitForRun(this.jobId, { ...options, runId: this.runId });
@@ -270,6 +277,8 @@ export class CurrentRun {
       failureStatuses?: Set<string>;
       timeout?: number;
       pollInterval?: number;
+      /** Keep polling while the run is paused instead of throwing `RunPausedError`. */
+      waitWhilePaused?: boolean;
     } = {},
   ): Promise<RunHandle> {
     const run = await this.#client.waitForRun(this.jobId, options);
@@ -415,24 +424,52 @@ export class JobRef {
     await this.#client._delete(this.jobId);
   }
 
+  /**
+   * Start a new run. Without `status` every task runs again; with it (for example
+   * `["failed", "pending"]`) only tasks in those states run and the rest are inherited.
+   *
+   * The API answers every rerun with 202 while it writes the new run's task rows, so
+   * `results()` read straight after a rerun can be partial. Pass `waitForIngest: true` to
+   * resolve only once ingestion is done (it polls up to 300 s), or call `waitForIngest()`.
+   */
   async rerun(
-    options: { status?: string | string[]; idempotencyKey?: string } = {},
+    options: {
+      status?: string | string[];
+      idempotencyKey?: string;
+      waitForIngest?: boolean;
+    } = {},
   ): Promise<RunHandle> {
-    const resp = await this.#client._postRerun(this.jobId, options);
-    return new RunHandle(this.#client, this.jobId, resp.latest_run.run_id, resp.latest_run);
+    const { waitForIngest, ...rest } = options;
+    const resp = await this.#client._postRerun(this.jobId, rest);
+    let run = resp.latest_run;
+    if (waitForIngest && run.ingest_status === "pending") {
+      const job = await this.#client._waitForIngestRaw(this.jobId);
+      if (job.latest_run?.run_id === run.run_id) run = job.latest_run;
+    }
+    return new RunHandle(this.#client, this.jobId, run.run_id, run);
   }
 
   /** Shortcut for `rerun({ status: "failed" })` (or `"failed,pending"` with `includePending`). */
   retryFailed(
-    options: { includePending?: boolean; idempotencyKey?: string } = {},
+    options: { includePending?: boolean; idempotencyKey?: string; waitForIngest?: boolean } = {},
   ): Promise<RunHandle> {
     const status = options.includePending ? ["failed", "pending"] : "failed";
-    return this.rerun({ status, idempotencyKey: options.idempotencyKey });
+    return this.rerun({
+      status,
+      idempotencyKey: options.idempotencyKey,
+      waitForIngest: options.waitForIngest,
+    });
   }
 
+  /**
+   * Append tasks to an open job (up to 10,000 per call). With an `idempotencyKey`, a repeat of
+   * the same call (same key, same body) returns the original answer instead of adding the
+   * tasks again, so the SDK retries it on a transient failure. Without one, every call appends
+   * its tasks and a failed call is not retried.
+   */
   addTasks(
     tasks: BatchTaskLike[],
-    options: { lastBatch?: boolean } = {},
+    options: { lastBatch?: boolean; idempotencyKey?: string } = {},
   ): Promise<{
     accepted_tasks: number;
     job_status: Extensible<JobStatus>;

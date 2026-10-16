@@ -21,8 +21,6 @@ const TIER_ORDER: Tier[] = [
   "auto",
 ];
 
-const TRUTHY_STRINGS = new Set(["true", "1", "yes", "on"]);
-
 export type ParamValue = string | boolean | number | Record<string, string>;
 export type ParamMap = Record<string, ParamValue>;
 
@@ -46,19 +44,19 @@ export interface CostEstimate {
   exact: boolean;
 }
 
+/**
+ * A flag is on exactly when the Batch API would read it as on: JSON `true`, or a string
+ * equal to "true" in any case. The API rejects other spellings ("1", "yes", numbers) with
+ * a 400 at submit, so they never bill; they count as off here.
+ */
 function truthy(value: ParamValue | undefined): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value !== 0;
-  if (typeof value === "string") return TRUTHY_STRINGS.has(value.trim().toLowerCase());
-  return false;
+  if (value === true) return true;
+  return typeof value === "string" && value.toLowerCase() === "true";
 }
 
+/** The API accepts only the exact value "auto" for `mode`. */
 function isAuto(params: ParamMap): boolean {
-  return (
-    String(params.mode ?? "")
-      .trim()
-      .toLowerCase() === "auto"
-  );
+  return params.mode === "auto";
 }
 
 function costForParams(params: ParamMap): { tier: Tier; min: number; max: number } {
@@ -91,8 +89,13 @@ function taskParams(task: TaskLike): ParamMap {
 
 /**
  * Estimate the credit cost of a job before submitting it. `tasks` accepts the same shapes
- * `submitRegular` does: bare URL strings or task objects. Per-task `zenrows_params` override
- * the job-level `zenrowsParams` on key collision (task wins), matching the worker's merge.
+ * `submitRegular` does: bare URL strings or task objects. Each task is priced on the
+ * job-level `zenrowsParams` overlaid with its own `zenrows_params` (the task wins on a key
+ * collision), the same merge the API applies.
+ *
+ * Scrape params set directly on a task object (a flat `js_render` next to `url`) are not
+ * counted: the API has no such task field and ignores it, so it doesn't change the price.
+ * Put per-task params under `zenrows_params`.
  */
 export function estimateCost(tasks: Iterable<TaskLike>, zenrowsParams?: ParamMap): CostEstimate {
   const jobParams = zenrowsParams ?? {};

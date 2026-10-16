@@ -39,13 +39,15 @@ import type {
   Run,
   StartExportResponse,
   TaskHistoryResponse,
+  TaskMethod,
   TaskResult,
   TestWebhookResponse,
   WebhookConfig,
 } from "./types.js";
-import { pollUntil } from "./waiters.js";
+import { RunPausedError, pollUntil } from "./waiters.js";
 
 const DEFAULT_BATCH_API_URL = "https://async.api.zenrows.com/v1";
+const DEFAULT_TIMEOUT_SECONDS = 30;
 
 // Run states that never transition again: the default waiter target. `failed` is an
 // account-level auto-fail (e.g. `api_key_cap_reached`, `insufficient_credits`).
@@ -55,8 +57,17 @@ const TERMINAL_EXPORT_STATUSES = new Set(["completed", "failed"]);
 export interface BatchClientConfig {
   /** Override the Batch API base URL. Matches the Go/Python batch clients' base-URL override. */
   baseURL?: string;
-  /** Retries for transient failures (429/502/503/504 + network errors) on idempotent requests. Default 3. */
+  /**
+   * Retries for transient failures (429/502/503/504 + network errors) on idempotent requests.
+   * Default 3. A 429 `quota_exceeded` (an account limit) is never retried.
+   */
   retries?: number;
+  /**
+   * Seconds each API request may take. Default 30. Waiters (`wait`, `waitForRun`) poll with
+   * many short requests, so this does not limit how long a wait lasts, and result downloads
+   * from `result_url` are not limited by it either.
+   */
+  timeout?: number;
 }
 
 export interface BatchTask {
@@ -64,10 +75,18 @@ export interface BatchTask {
   external_id?: string;
   metadata?: Record<string, unknown>;
   zenrows_params?: Record<string, unknown>;
+  /** HTTP method for the target fetch. Default `GET`. */
+  method?: TaskMethod;
+  /** Request body for a `POST` task: a JSON value or a string, up to 16 KiB. */
+  body?: unknown;
 }
 
 export interface BatchWebhookConfig {
   url: string;
+  /**
+   * Sign deliveries with the account's HMAC key. On `putJobWebhook`, pass it every time;
+   * see that method for what happens when it is left out.
+   */
   signature?: boolean;
 }
 
@@ -106,6 +125,10 @@ export interface ListJobsOptions {
 export interface GetResultsOptions {
   runId?: string;
   cursor?: string;
+  /**
+   * @deprecated Ignored and not sent: the results endpoint returns pages of a fixed size
+   * (about 1,000 rows). Follow `next_cursor`, or use `iterResults`.
+   */
   limit?: number;
   status?: string;
 }
@@ -126,6 +149,12 @@ export interface WaitForRunOptions {
   timeout?: number;
   pollInterval?: number;
   maxPollInterval?: number;
+  /**
+   * A paused run never progresses until someone resumes it, so by default the wait stops
+   * at once with a `RunPausedError` carrying the run. Set this to keep polling while
+   * paused, for example when another process will resume it.
+   */
+  waitWhilePaused?: boolean;
 }
 
 type TaskInput =
@@ -136,14 +165,13 @@ type TaskInput =
       metadata?: Record<string, unknown>;
       /** Per-task scrape params, merged over the job-level `zenrowsParams` (task wins). */
       zenrows_params?: Record<string, unknown>;
+      /** HTTP method for the target fetch. Default `GET`. */
+      method?: TaskMethod;
+      /** Request body for a `POST` task: a JSON value or a string, up to 16 KiB. */
+      body?: unknown;
     };
 
-function coerceUrl(item: TaskInput): {
-  url: string;
-  external_id?: string;
-  metadata?: Record<string, unknown>;
-  zenrows_params?: Record<string, unknown>;
-} {
+function coerceUrl(item: TaskInput): BatchTask {
   return typeof item === "string" ? { url: item } : item;
 }
 
@@ -167,6 +195,8 @@ export class ZenRowsBatchClient {
       config.baseURL ?? DEFAULT_BATCH_API_URL,
       apiKey,
       config.retries,
+      undefined,
+      (config.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1000,
     );
   }
 
@@ -254,6 +284,7 @@ export class ZenRowsBatchClient {
       metadata: opts.metadata,
       webhook: opts.webhook,
       idempotencyKey: opts.idempotencyKey,
+      waitForIngest: opts.waitForIngest,
       // biome-ignore lint/suspicious/noExplicitAny: schedule builder output matches JobSchedule at the wire boundary
       ...{ schedule: schedule.toRequestBody() as unknown as any },
     });
@@ -325,7 +356,7 @@ export class ZenRowsBatchClient {
   // ===== results / content =====
 
   async getResults(jobId: string, options: GetResultsOptions = {}): Promise<ListResultsResponse> {
-    const { runId, ...query } = options;
+    const { runId, limit: _ignored, ...query } = options;
     const path = runId ? `/jobs/${jobId}/runs/${runId}/results` : `/jobs/${jobId}/results`;
     return this.transport.requestJson("GET", path, { query });
   }
@@ -343,17 +374,46 @@ export class ZenRowsBatchClient {
     }
   }
 
-  /** Returns the scraped page's raw content as-is (HTML/text, not JSON). */
+  /**
+   * Returns a task's stored content decoded as text (HTML, Markdown, plain text or JSON).
+   * Text decoding corrupts binary bodies: for a `pdf` or other binary result, use
+   * `getTaskContentBytes` instead.
+   *
+   * Throws a `ZenRowsBatchError`: 409 `task_not_ready` while the task runs, 422 with the
+   * task's error for a failed task, and 410 `result_expired` past the retention window.
+   */
   async getTaskContent(
     jobId: string,
     taskId: string,
     options: { runId?: string } = {},
   ): Promise<string> {
-    const path = options.runId
+    const response = await this.transport.requestRaw(
+      "GET",
+      this.contentPath(jobId, taskId, options),
+    );
+    return response.text();
+  }
+
+  /**
+   * Returns a task's stored content as raw bytes, so binary results such as PDFs arrive
+   * intact. Same errors as `getTaskContent`.
+   */
+  async getTaskContentBytes(
+    jobId: string,
+    taskId: string,
+    options: { runId?: string } = {},
+  ): Promise<Buffer> {
+    const response = await this.transport.requestRaw(
+      "GET",
+      this.contentPath(jobId, taskId, options),
+    );
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  private contentPath(jobId: string, taskId: string, options: { runId?: string }): string {
+    return options.runId
       ? `/jobs/${jobId}/runs/${options.runId}/tasks/${taskId}/content`
       : `/jobs/${jobId}/tasks/${taskId}/content`;
-    const response = await this.transport.requestRaw("GET", path);
-    return response.text();
   }
 
   getTaskHistory(
@@ -407,10 +467,29 @@ export class ZenRowsBatchClient {
     return this.transport.requestJson("GET", `/jobs/${jobId}/webhook`);
   }
 
-  putJobWebhook(jobId: string, config: BatchWebhookConfig): Promise<WebhookConfig> {
+  /**
+   * Replace a job's webhook. The API needs both `url` and `signature` on this call, so pass
+   * `signature` whenever you know the setting you want.
+   *
+   * When `signature` is left out, the SDK reads the job's current setting first (`false` when
+   * the job has no webhook yet) and sends that, so changing only the URL never turns signing
+   * off. That is two requests, not one atomic update: a change someone else makes in between
+   * is overwritten with the value read.
+   */
+  async putJobWebhook(jobId: string, config: BatchWebhookConfig): Promise<WebhookConfig> {
+    const signature = config.signature ?? (await this.currentWebhookSignature(jobId));
     return this.transport.requestJson("PUT", `/jobs/${jobId}/webhook`, {
-      body: { signature: false, ...config },
+      body: { url: config.url, signature },
     });
+  }
+
+  private async currentWebhookSignature(jobId: string): Promise<boolean> {
+    try {
+      return (await this.getJobWebhook(jobId)).signature === true;
+    } catch (error) {
+      if (error instanceof ZenRowsBatchError && error.status === 404) return false;
+      throw error;
+    }
   }
 
   async deleteJobWebhook(jobId: string): Promise<void> {
@@ -526,7 +605,7 @@ export class ZenRowsBatchClient {
     });
   }
 
-  /** Start an export, wait for it, and save the zip to `targetPath`. Capped at 1 GiB per run. */
+  /** Start an export, wait for it, and save the zip to `targetPath`. The API caps the size of one export. */
   async downloadAllResults(
     jobId: string,
     runId: string,
@@ -633,10 +712,11 @@ export class ZenRowsBatchClient {
   async _postTasks(
     jobId: string,
     tasks: BatchTask[],
-    options: { lastBatch?: boolean } = {},
+    options: { lastBatch?: boolean; idempotencyKey?: string } = {},
   ): Promise<AddTasksResponse> {
     return this.transport.requestJson("POST", `/jobs/${jobId}/tasks`, {
       body: { tasks, last_batch: options.lastBatch ?? false },
+      idempotencyKey: options.idempotencyKey,
     });
   }
 
@@ -653,12 +733,25 @@ export class ZenRowsBatchClient {
   /** @internal */
   async _waitForRunRaw(jobId: string, options: WaitForRunOptions): Promise<Run> {
     const target = options.targetStatuses ?? TERMINAL_RUN_STATUSES;
-    const fetchRun = async (): Promise<Run | undefined> => {
+    const loadRun = async (): Promise<Run | undefined> => {
       if (!options.runId) {
         const job = await this._getJobData(jobId);
         return job.latest_run;
       }
       return this._getRunData(jobId, options.runId);
+    };
+    const fetchRun = async (): Promise<Run | undefined> => {
+      const run = await loadRun();
+      if (
+        run !== undefined &&
+        run.pause_state === "paused" &&
+        !target.has(run.status) &&
+        !options.failureStatuses?.has(run.status) &&
+        !options.waitWhilePaused
+      ) {
+        throw new RunPausedError(run);
+      }
+      return run;
     };
     return pollUntil(fetchRun, {
       // A status the caller named as a failure throws, even when it is also a target.
@@ -692,3 +785,4 @@ export class ZenRowsBatchClient {
 
 export { CurrentRun, ExportHandle, ExportRef, JobHandle, JobRef, RunHandle, RunRef };
 export type { DownloadedResult };
+export * from "./webhook.js";
