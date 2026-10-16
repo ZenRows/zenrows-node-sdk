@@ -16,6 +16,7 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
   - [Adaptive Stealth Mode](#adaptive-stealth-mode)
   - [POST Requests](#post-requests)
   - [Extract](#extract)
+    - [Preparing a domain](#preparing-a-domain)
   - [Batch](#batch)
     - [Failed runs and extensible values](#failed-runs-and-extensible-values)
     - [Extract in a batch](#extract-in-a-batch)
@@ -196,6 +197,67 @@ const url = "https://www.zenrows.com/";
 ```
 
 `extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
+
+Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means Extract can't extract this page. Check `reason` in the problem body when present; older responses may not carry it:
+
+- `domain_not_prepared`: prepare the domain with `client.prepareDomain()` (see below), poll `client.preparedDomainStatus()` until `status` is `"ready"`, then retry.
+- `page_not_recognised`: the domain is served, but this page isn't one Extract extracts (a home, search, login or category page). Try a product, article or listing page, or retry once in a few minutes. Preparing the domain again changes nothing.
+- `domain_not_enabled`: preparing doesn't help. Use `css_extractor`, or contact support.
+
+```javascript
+const response = await client.extract(url);
+if (response.status === 403) {
+  const problem = await response.json();
+  if (problem.code === "REQS007") {
+    switch (problem.reason) { // undefined on older responses
+      case "domain_not_prepared":
+        // client.prepareDomain(...), then poll client.preparedDomainStatus(...)
+        break;
+      case "page_not_recognised":
+        // try a product, article or listing page
+        break;
+      case "domain_not_enabled":
+        // use css_extractor, or contact support
+        break;
+    }
+  }
+}
+```
+
+The legacy `402` with `code: "AUTH010"` means the domain isn't enabled. `extract()` returns both error responses to you as is, in one request, and never retries them with autoparse. `fallbackToAutoparse` is deprecated and has no effect; passing `true` emits a `DeprecationWarning` once per process.
+
+#### Preparing a domain
+
+`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs, one per kind of page you want to extract. These calls cost no credits.
+
+Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`:
+
+```javascript
+import { ZenRows, ZenRowsPreparedDomainError } from "zenrows";
+
+const client = new ZenRows("YOUR-API-KEY");
+
+try {
+  let status = await client.prepareDomain("www.scrapingcourse.com", [
+    "https://www.scrapingcourse.com/ecommerce/",
+  ]);
+  while (status.status === "preparing") {
+    await new Promise((resolve) => setTimeout(resolve, 30_000));
+    status = await client.preparedDomainStatus("www.scrapingcourse.com");
+  }
+  console.log(status.status); // "ready" or "failed" (see status.failure)
+} catch (error) {
+  if (error instanceof ZenRowsPreparedDomainError) {
+    // e.g. 409 in_progress, 429 out_of_allowance, 503 overloaded
+    console.error(error.status, error.code, error.detail);
+  }
+  throw error;
+}
+```
+
+They don't go through the client's queue or its `retries`, and an empty `domain` rejects with a `TypeError` before any request.
+
+Both methods reject with `ZenRowsPreparedDomainError` on an error answer, with `status`, `code` (`invalid_argument`, `not_found`, `in_progress`, `out_of_allowance`, `overloaded`, `disabled`, ...), `detail`, `reason`, `retryAfter` and the whole `problem` body. See the [Extract endpoints docs](https://docs.zenrows.com/extract/endpoints) for every status and failure code.
 
 A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup).
 
