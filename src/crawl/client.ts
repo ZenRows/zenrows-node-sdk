@@ -50,7 +50,10 @@ export interface CreateCrawlParams {
   maxItems?: number;
   /** Stop once this many pages are fetched, 1–100000; bounds the cost. Server default 100. */
   maxPages?: number;
-  /** Keep a URL only if it contains at least one of these substrings. */
+  /**
+   * Keep a URL only if it contains at least one of these substrings. A crawl whose patterns reject
+   * every link ends `completed` with no results and no `error`.
+   */
   includePatterns?: string[];
   /** Drop a URL that contains any of these substrings, even if it matches an include pattern. */
   excludePatterns?: string[];
@@ -247,8 +250,9 @@ export class ZenRowsCrawlClient {
 
   /**
    * Poll until the crawl ends (any status but `running`) or `timeout` seconds pass, and return
-   * it, without results. A `failed` crawl resolves too: read `error`. On timeout the crawl is
-   * returned with status `running` and keeps running.
+   * it, without results. A `failed` crawl resolves too: read `error`. So does a crawl that
+   * `stopped` because credits ran out or the API key hit a credit cap; `error` says which. On
+   * timeout the crawl is returned with status `running` and keeps running.
    */
   async wait(crawlId: string, options: WaitForCrawlOptions = {}): Promise<Crawl> {
     const deadline = Date.now() + (options.timeout ?? DEFAULT_WAIT_TIMEOUT_SECONDS) * 1000;

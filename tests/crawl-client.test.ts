@@ -678,6 +678,21 @@ describe("ZenRowsCrawlClient — wait", () => {
     expect(ended.error?.code).toBe("seed_unreachable");
   });
 
+  test.each(["insufficient_credits", "api_key_cap_reached"])(
+    "resolves on a crawl stopped on credits (%s), with its error",
+    async (code) => {
+      server.use(
+        http.get(`${BASE}/crawls/c_1`, () =>
+          HttpResponse.json(crawl({ status: "stopped", error: { code, detail: "x" } })),
+        ),
+      );
+      const ended = await new ZenRowsCrawlClient("API_KEY").wait("c_1");
+      expect(ended.status).toBe("stopped");
+      expect(ended.stop_reason).toBeUndefined();
+      expect(ended.error?.code).toBe(code);
+    },
+  );
+
   test("returns the running crawl once the timeout runs out", async () => {
     let polls = 0;
     server.use(
