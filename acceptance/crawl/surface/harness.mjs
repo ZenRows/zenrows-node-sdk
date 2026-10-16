@@ -10,7 +10,7 @@ export const HAS_KEY = KEY.length > 0;
 export const CRAWL_URL = process.env.CRAWL_URL;
 export const INCLUDE = process.env.CRAWL_INCLUDE;
 export const API_BASE = process.env.CRAWL_API_BASE || "https://api.zenrows.com/v1";
-/** An include pattern no URL contains: the crawl keeps nothing and ends failed (check 19). */
+/** An include pattern no URL contains: the crawl keeps nothing and completes (check 19). */
 export const NO_MATCH = "/crawl-acceptance-matches-nothing/";
 /** The default every client documents for max_pages and max_items (check 21). */
 export const DOCUMENTED_DEFAULT = 100;

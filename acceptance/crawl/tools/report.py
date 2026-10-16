@@ -18,7 +18,7 @@ CHECK_TITLES = {
     "1": "Create", "2": "Create with html", "3": "Idempotency", "4": "Wait", "5": "Wait runs out", "6": "Get",
     "7": "List", "8": "Results", "9": "Content", "10": "Download", "11": "Stop", "12": "Not found",
     "13": "Invalid input", "14": "Gated option", "15": "Bad key", "16": "Errors carry the server code",
-    "17": "Naming", "18": "Copy", "19": "Failed crawl", "20": "Results after stop", "21": "Documented defaults",
+    "17": "Naming", "18": "Copy", "19": "Patterns match nothing", "20": "Results after stop", "21": "Documented defaults",
 }
 # The API's operation and parameter names. Each surface uses them in its own casing.
 CANON_OPS = ["create", "get", "list", "results", "content", "download", "stop", "wait"]
