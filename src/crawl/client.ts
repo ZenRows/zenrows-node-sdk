@@ -2,6 +2,7 @@ import { BatchTransport, DEFAULT_RETRIES } from "../batch/transport.js";
 import { ZenRowsCrawlError, crawlError } from "./errors.js";
 import type {
   Crawl,
+  CrawlDiscoveryStrategy,
   CrawlDownload,
   CrawlExportLine,
   CrawlList,
@@ -53,8 +54,13 @@ export interface CreateCrawlParams {
   includePatterns?: string[];
   /** Drop a URL that contains any of these substrings, even if it matches an include pattern. */
   excludePatterns?: string[];
-  /** Also fetch each kept URL's page. Absent means URLs only. */
+  /** Also fetch each kept URL's page, in this format. Absent means URLs only. */
   outputFormat?: CrawlOutputFormat;
+  /**
+   * How the crawl finds the URLs it follows on each page it walks. `["links"]` follows the
+   * links in the page's HTML, and is what a crawl runs with when you leave this out.
+   */
+  discovery?: CrawlDiscoveryStrategy[];
 }
 
 export interface WaitForCrawlOptions {
@@ -135,6 +141,7 @@ export class ZenRowsCrawlClient {
       include_patterns: params.includePatterns,
       exclude_patterns: params.excludePatterns,
       output_format: params.outputFormat,
+      discovery: params.discovery,
     };
     return this.transport.requestJson("POST", "/crawls", {
       body,
@@ -203,14 +210,22 @@ export class ZenRowsCrawlClient {
   }
 
   /**
-   * One kept URL's page as fetched (HTML). Pass the content id, a `content_url`, or the
-   * `CrawlResult` itself (its `content_url` is present once `content_status` is `fetched`).
-   * Throws `TypeError` when no content id can be read.
+   * One kept URL's page, in the crawl's output format. Pass the content id, a `content_url`,
+   * or the `CrawlResult` itself (its `content_url` is present once `content_status` is
+   * `fetched`). Throws `TypeError` when no content id can be read.
+   *
+   * With `download: true` the server sends the page as a file to save, named after its
+   * content id, instead of one to show. The text is the same either way.
    */
-  async content(crawlId: string, contentId: string | CrawlResult): Promise<string> {
+  async content(
+    crawlId: string,
+    contentId: string | CrawlResult,
+    options: { download?: boolean } = {},
+  ): Promise<string> {
     return this.transport.requestText(
       "GET",
       `/crawls/${encodeURIComponent(crawlId)}/contents/${encodeURIComponent(contentIdOf(contentId))}`,
+      options.download ? { query: { download: true } } : {},
     );
   }
 

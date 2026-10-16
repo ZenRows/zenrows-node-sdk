@@ -55,7 +55,7 @@ record(
 const subs = [
   ['const apiKey = "YOUR-API-KEY";', "const apiKey = process.env.ZENROWS_API_KEY;", "set the key"],
   [
-    'url: "https://example.com/products/"',
+    'url: "https://www.scrapingcourse.com/ecommerce/"',
     `url: ${JSON.stringify(CRAWL_URL)}`,
     "start URL → CRAWL_URL",
   ],
@@ -72,6 +72,15 @@ const subs = [
     "no html",
   ],
 ];
+if (API_BASE !== "https://api.zenrows.com/v1") {
+  // The quickstart leaves the base URL out, so it would reach production
+  // whatever CRAWL_API_BASE says. Point it where the rest of the run goes.
+  subs.push([
+    "const client = new ZenRows(apiKey);",
+    `const client = new ZenRows(apiKey, { crawl: { baseURL: ${JSON.stringify(API_BASE)} } });`,
+    "base URL → CRAWL_API_BASE",
+  ]);
+}
 let quick = block ?? "";
 const applied = [];
 for (const [from, to, why] of subs) {
@@ -624,6 +633,40 @@ await liveCheck(
     };
   },
 );
+await liveCheck(
+  "22",
+  "Discovery",
+  'create({ discovery: ["links"] }) is echoed back, and a create without it reads ["links"]',
+  async () => {
+    const given = await create({ ...base, discovery: ["links"] });
+    const leftOut = await create({ ...base, maxItems: 1 });
+    for (const c of [given, leftOut]) await client.stop(c.crawl_id);
+    const seen = [given.discovery, leftOut.discovery];
+    const asked = JSON.stringify(seen[0]) === JSON.stringify(["links"]);
+    const defaulted = JSON.stringify(seen[1]) === JSON.stringify(["links"]);
+    return {
+      status: passIf(asked && defaulted),
+      actual: JSON.stringify({ 'discovery: ["links"]': seen[0], "left out": seen[1] }),
+    };
+  },
+);
+await liveCheck(
+  "23",
+  "Content as a file",
+  "content(..., { download: true }) returns the same page as content() does",
+  async () => {
+    if (!B) return { status: SKIP, actual: "no html crawl to read a page from" };
+    const page = await client.get(B.crawl_id, { limit: 100 });
+    const fetched = page.results.find((r) => r.content_url);
+    if (!fetched) return { status: SKIP, actual: "no result had been fetched" };
+    const plain = await client.content(B.crawl_id, fetched);
+    const asFile = await client.content(B.crawl_id, fetched, { download: true });
+    return {
+      status: passIf(Boolean(plain) && plain === asFile),
+      actual: `same ${plain.length} chars with and without download: true`,
+    };
+  },
+);
 await check("15", "Bad key", "any call with the key `invalid` → 401", async () => {
   const bad = new ZenRowsCrawlClient("invalid", { baseURL: API_BASE, retries: 0 });
   const r = await errOf(bad.get("c_does_not_exist"));
@@ -717,11 +760,13 @@ H.naming({
     include_patterns: "includePatterns",
     exclude_patterns: "excludePatterns",
     output_format: "outputFormat",
+    discovery: "discovery",
     idempotency_key: "idempotencyKey",
     cursor: "cursor",
     limit: "limit",
     timeout: "timeout",
     content_id: "contentId",
+    download: "download",
   },
 });
 record("17", "Naming", SKIP, "the API's names in this surface's casing", "computed by the report");
