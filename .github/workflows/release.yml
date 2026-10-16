@@ -256,13 +256,17 @@ jobs:
         if: steps.npm.outputs.published != 'true'
         run: npm publish "./package/zenrows-$VERSION.tgz" --provenance --access public
 
+      # npm can take a few minutes to serve a version published with
+      # provenance: 2.4.0 took 2 minutes 38 seconds. Ask the registry for this
+      # exact version, so no client cache answers.
       - name: Verify on npm
         run: |
-          for _ in $(seq 10); do
-            [ "$(npm view "zenrows@$VERSION" version 2>/dev/null)" = "$VERSION" ] && exit 0
+          for _ in $(seq 40); do
+            status=$(curl -s -o /dev/null -w '%{http_code}' "https://registry.npmjs.org/zenrows/$VERSION")
+            [ "$status" = 200 ] && exit 0
             sleep 15
           done
-          echo "::error::zenrows $VERSION is not on npm after 150 seconds."
+          echo "::error::zenrows $VERSION is not on npm after 10 minutes."
           exit 1
 
       - name: Write the summary
