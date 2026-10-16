@@ -11,6 +11,10 @@ export type CrawlStopReason = "max_items" | "max_pages" | "user";
 /**
  * Why a crawl failed (`status: failed`), or why it stopped on credits: `insufficient_credits` and
  * `api_key_cap_reached` come with `status: stopped`, and the pages fetched before that stay readable.
+ * `seed_unreachable`: the start page could not be reached, was blocked, or came back empty, with no
+ * visible text and no link. `no_items_found`: the crawl read the start page but found no data it could
+ * use, so it had nothing to follow; start from a listing or product page. A crawl that returns nothing
+ * for any other reason is not a failure: it ends `completed` with no results.
  */
 export type CrawlErrorCode =
   | "insufficient_credits"
