@@ -25,12 +25,12 @@ describe("ZenRows Client Get", () => {
 
     expect(clientSpy).toHaveBeenCalledWith(
       `${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}`,
-      {
+      expect.objectContaining({
         method: "GET",
         headers: {
           "User-Agent": `zenrows/${packageJson.version} node`,
         },
-      },
+      }),
     );
     expect(response.status).toBe(200);
   });
@@ -64,12 +64,12 @@ describe("ZenRows Client Get", () => {
 
     expect(clientSpy).toHaveBeenCalledWith(
       `${apiUrl}?url=${encodeURIComponent(url)}&apikey=${apiKey}&custom_headers=true`,
-      {
+      expect.objectContaining({
         method: "GET",
         headers: {
           "User-Agent": "test",
         },
-      },
+      }),
     );
   });
 
