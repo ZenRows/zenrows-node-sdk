@@ -1,6 +1,6 @@
 {
   "name": "zenrows",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Zenrows Node SDK: Fetch, Extract (structured data), Batch and Crawl APIs",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
