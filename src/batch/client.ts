@@ -112,6 +112,11 @@ export interface SubmitTypedOptions {
   metadata?: Record<string, string>;
   webhook?: BatchWebhookConfig;
   idempotencyKey?: string;
+  /**
+   * Block until the run's task rows are written for a large (202) submission. No effect on
+   * `submitScheduled`: a scheduled submit creates no run, the first one starts when the
+   * schedule fires.
+   */
   waitForIngest?: boolean;
 }
 
@@ -284,7 +289,6 @@ export class ZenRowsBatchClient {
       metadata: opts.metadata,
       webhook: opts.webhook,
       idempotencyKey: opts.idempotencyKey,
-      waitForIngest: opts.waitForIngest,
       // biome-ignore lint/suspicious/noExplicitAny: schedule builder output matches JobSchedule at the wire boundary
       ...{ schedule: schedule.toRequestBody() as unknown as any },
     });
@@ -387,11 +391,7 @@ export class ZenRowsBatchClient {
     taskId: string,
     options: { runId?: string } = {},
   ): Promise<string> {
-    const response = await this.transport.requestRaw(
-      "GET",
-      this.contentPath(jobId, taskId, options),
-    );
-    return response.text();
+    return this.transport.requestText("GET", this.contentPath(jobId, taskId, options));
   }
 
   /**
@@ -403,11 +403,7 @@ export class ZenRowsBatchClient {
     taskId: string,
     options: { runId?: string } = {},
   ): Promise<Buffer> {
-    const response = await this.transport.requestRaw(
-      "GET",
-      this.contentPath(jobId, taskId, options),
-    );
-    return Buffer.from(await response.arrayBuffer());
+    return this.transport.requestBytes("GET", this.contentPath(jobId, taskId, options));
   }
 
   private contentPath(jobId: string, taskId: string, options: { runId?: string }): string {
@@ -770,12 +766,29 @@ export class ZenRowsBatchClient {
     jobId: string,
     options: { timeout?: number; pollInterval?: number; maxPollInterval?: number } = {},
   ): Promise<Job> {
+    // Ingestion is done only when the API says so. A run stopped mid-ingest is already
+    // terminal while its rows and totals are still being settled, so the run status alone
+    // is not enough.
     return pollUntil(() => this._getJobData(jobId), {
-      isDone: (job) => {
-        const run = job.latest_run;
-        if (!run || TERMINAL_RUN_STATUSES.has(run.status)) return true;
-        return run.ingest_status !== "pending";
-      },
+      isDone: (job) => !job.latest_run || job.latest_run.ingest_status !== "pending",
+      timeout: options.timeout ?? 300,
+      initialInterval: options.pollInterval ?? 2,
+      maxInterval: options.maxPollInterval ?? 15,
+    });
+  }
+
+  /**
+   * @internal Wait for one run's ingestion, by run id. A replayed submit or rerun returns
+   * the original run, which may no longer be the job's latest, so this never follows
+   * `latest_run`.
+   */
+  async _waitForRunIngestRaw(
+    jobId: string,
+    runId: string,
+    options: { timeout?: number; pollInterval?: number; maxPollInterval?: number } = {},
+  ): Promise<Run> {
+    return pollUntil(() => this._getRunData(jobId, runId), {
+      isDone: (run) => run.ingest_status !== "pending",
       timeout: options.timeout ?? 300,
       initialInterval: options.pollInterval ?? 2,
       maxInterval: options.maxPollInterval ?? 15,

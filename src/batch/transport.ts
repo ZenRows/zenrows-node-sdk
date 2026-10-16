@@ -123,6 +123,20 @@ export class BatchTransport {
   }
 
   /**
+   * Send a request and return its body as bytes; throw the factory's error on non-2xx. The
+   * timeout covers reading the body.
+   */
+  async requestBytes(method: string, path: string, options: RequestOptions = {}): Promise<Buffer> {
+    const { response, clear } = await this.send(method, path, options);
+    try {
+      await this.throwUnlessOk(response);
+      return Buffer.from(await response.arrayBuffer());
+    } finally {
+      clear();
+    }
+  }
+
+  /**
    * Send a request and return the raw `Response`, for bodies read as a stream. The timeout
    * stops once the headers of a 2xx arrive; an error body is still read within it.
    */

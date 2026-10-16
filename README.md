@@ -275,7 +275,7 @@ The client also wraps the rest of the API:
 - Results exports: `job.run.startExport()`, `waitForExport()`, `downloadAllResults()`.
 - Cost: `estimateCost(tasks, zenrowsParams)` prices each task on the job params overlaid with its own `zenrows_params`, locally, with no API call. A flag counts as on only when it is `true` or `"true"`, the values the API accepts.
 
-A submit of 10,000 tasks or more, and every rerun, returns while the API is still writing the run's task rows (`ingest_status: "pending"`). Pass `waitForIngest: true` to `submitRegular()`, `submitOpen()`, `submitScheduled()`, `rerun()` or `retryFailed()` to resolve only once the rows are written; until then `results()` can be partial.
+A submit of 10,000 tasks or more, and every rerun, returns while the API is still writing the run's task rows (`ingest_status: "pending"`). Pass `waitForIngest: true` to `submitRegular()`, `submitOpen()`, `rerun()` or `retryFailed()` to resolve only once the rows are written; until then `results()` can be partial. A scheduled submit (`submitScheduled()`) creates no run: it stores the task template, and the first run starts when the schedule fires.
 
 #### Results and retention
 

@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { http, HttpResponse } from "msw";
 import { describe, expect, expectTypeOf, test } from "vitest";
 import {
@@ -123,8 +125,22 @@ describe("content of an expired result", () => {
   });
 });
 
-describe("waitForIngest on rerun and submitScheduled", () => {
-  test("rerun({ waitForIngest: true }) returns the run once its rows are written", async () => {
+describe("waiting for ingestion", () => {
+  function runBody(runId: string, status: string, ingest: string) {
+    return {
+      run_id: runId,
+      job_id: "job_rr",
+      run_sequence: 2,
+      status,
+      ingest_status: ingest,
+      stats: { total: 3, completed: 0, successful: 0, failed: 0 },
+    };
+  }
+
+  test("rerun({ waitForIngest: true }) waits on the returned run, not the job's latest", async () => {
+    // A replayed rerun returns its original run (run_2) while run_3 is now the latest and
+    // still ingesting. The wait must follow run_2.
+    const runReads: string[] = [];
     let jobReads = 0;
     server.use(
       http.post(`${API}/jobs/job_rr/rerun`, () =>
@@ -132,69 +148,184 @@ describe("waitForIngest on rerun and submitScheduled", () => {
           {
             job_id: "job_rr",
             status: "closed",
-            latest_run: { run_id: "run_2", status: "pending", ingest_status: "pending" },
+            latest_run: runBody("run_2", "pending", "pending"),
             retried_tasks: 3,
             inherited_tasks: 0,
           },
           { status: 202 },
         ),
       ),
+      http.get(`${API}/jobs/job_rr/runs/:runId`, ({ params }) => {
+        runReads.push(String(params.runId));
+        return HttpResponse.json(runBody(String(params.runId), "completed", "done"));
+      }),
       http.get(`${API}/jobs/job_rr`, () => {
         jobReads += 1;
         return HttpResponse.json({
           job_id: "job_rr",
           type: "regular",
           status: "closed",
-          latest_run: { run_id: "run_2", status: "running", ingest_status: "done" },
+          latest_run: runBody("run_3", "running", "pending"),
         });
       }),
     );
     const client = new ZenRowsBatchClient("API_KEY");
-    const run = await client.job("job_rr").retryFailed({ waitForIngest: true });
+    const run = await client
+      .job("job_rr")
+      .retryFailed({ idempotencyKey: "replayed", waitForIngest: true });
     expect(run.runId).toBe("run_2");
     expect(run.data.ingest_status).toBe("done");
-    expect(jobReads).toBe(1);
+    expect(runReads).toEqual(["run_2"]);
+    expect(jobReads).toBe(0);
 
     // Without the option, no extra read.
     await client.job("job_rr").rerun();
-    expect(jobReads).toBe(1);
+    expect(runReads).toEqual(["run_2"]);
   });
 
-  test("submitScheduled passes waitForIngest through", async () => {
-    let jobReads = 0;
+  test("a run stopped mid-ingest is not done until ingest_status leaves pending", async () => {
+    let reads = 0;
     server.use(
-      http.post(`${API}/jobs`, () =>
+      http.post(`${API}/jobs/job_rr/rerun`, () =>
         HttpResponse.json(
           {
-            job_id: "job_sched",
+            job_id: "job_rr",
             status: "closed",
-            accepted_tasks: 10_000,
-            latest_run: { run_id: "run_1", status: "pending", ingest_status: "pending" },
+            latest_run: runBody("run_2", "pending", "pending"),
+            retried_tasks: 3,
+            inherited_tasks: 0,
           },
           { status: 202 },
         ),
       ),
-      http.get(`${API}/jobs/job_sched`, () => {
-        jobReads += 1;
+      http.get(`${API}/jobs/job_rr/runs/run_2`, () => {
+        reads += 1;
+        // Stopped at once, but the API settles the rows and totals a poll later.
+        return HttpResponse.json(runBody("run_2", "stopped", reads < 2 ? "pending" : "done"));
+      }),
+    );
+    const client = new ZenRowsBatchClient("API_KEY");
+    // The rerun path uses the default 2 s poll; drive the same wait directly with a short one.
+    const resp = await client._postRerun("job_rr", {});
+    const run = await client._waitForRunIngestRaw("job_rr", resp.latest_run.run_id, {
+      pollInterval: 0.01,
+    });
+    expect(run.status).toBe("stopped");
+    expect(run.ingest_status).toBe("done");
+    expect(reads).toBe(2);
+  });
+
+  test("JobRef.waitForIngest on a stopped run with pending ingest keeps polling", async () => {
+    let reads = 0;
+    server.use(
+      http.get(`${API}/jobs/job_stop_ingest`, () => {
+        reads += 1;
         return HttpResponse.json({
-          job_id: "job_sched",
-          type: "scheduled",
+          job_id: "job_stop_ingest",
+          type: "regular",
           status: "closed",
-          latest_run: { run_id: "run_1", status: "running", ingest_status: "done" },
+          latest_run: {
+            ...runBody("run_1", "stopped", reads < 2 ? "pending" : "done"),
+            job_id: "job_stop_ingest",
+          },
         });
       }),
     );
     const client = new ZenRowsBatchClient("API_KEY");
-    await client.submitScheduled(
+    const handle = await client.job("job_stop_ingest").waitForIngest({ pollInterval: 0.01 });
+    expect(handle.data.latest_run?.ingest_status).toBe("done");
+    expect(reads).toBe(2);
+  });
+
+  test("a replayed submit waits on the run it returned, then loads the job", async () => {
+    const runReads: string[] = [];
+    server.use(
+      http.post(`${API}/jobs`, () =>
+        HttpResponse.json(
+          {
+            job_id: "job_big",
+            status: "closed",
+            accepted_tasks: 10_000,
+            latest_run: { ...runBody("run_1", "pending", "pending"), job_id: "job_big" },
+          },
+          { status: 202 },
+        ),
+      ),
+      http.get(`${API}/jobs/job_big/runs/:runId`, ({ params }) => {
+        runReads.push(String(params.runId));
+        return HttpResponse.json({
+          ...runBody(String(params.runId), "completed", "done"),
+          job_id: "job_big",
+        });
+      }),
+      http.get(`${API}/jobs/job_big`, () =>
+        HttpResponse.json({
+          job_id: "job_big",
+          type: "regular",
+          status: "closed",
+          latest_run: { ...runBody("run_3", "running", "pending"), job_id: "job_big" },
+        }),
+      ),
+    );
+    const client = new ZenRowsBatchClient("API_KEY");
+    const job = await client.submitRegular(["https://example.com"], undefined, {
+      idempotencyKey: "replayed",
+      waitForIngest: true,
+    });
+    expect(runReads).toEqual(["run_1"]);
+    expect(job.jobId).toBe("job_big");
+  });
+
+  test("submitScheduled answers 201 with no run, so waitForIngest never polls", async () => {
+    let jobReads = 0;
+    server.use(
+      http.post(`${API}/jobs`, () =>
+        HttpResponse.json(
+          { job_id: "job_sched", status: "closed", accepted_tasks: 1 },
+          { status: 201 },
+        ),
+      ),
+      http.get(`${API}/jobs/job_sched`, () => {
+        jobReads += 1;
+        return HttpResponse.json({ job_id: "job_sched", type: "scheduled", status: "closed" });
+      }),
+    );
+    const client = new ZenRowsBatchClient("API_KEY");
+    const job = await client.submitScheduled(
       new At("2030-01-01T00:00:00", "UTC"),
       ["https://example.com"],
       undefined,
-      {
-        waitForIngest: true,
-      },
+      { waitForIngest: true },
     );
-    expect(jobReads).toBe(1);
+    expect(job.jobId).toBe("job_sched");
+    expect(jobReads).toBe(0);
   });
+});
+
+describe("content reads honour the request timeout", () => {
+  test("getTaskContent and getTaskContentBytes abort a body that stalls after the headers", async () => {
+    // A real socket: headers and a first chunk arrive, then the body never ends.
+    const sockets = new Set<import("node:net").Socket>();
+    const stalled = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.write("<html>");
+    });
+    stalled.on("connection", (socket) => sockets.add(socket));
+    await new Promise<void>((resolve) => stalled.listen(0, "127.0.0.1", resolve));
+    const { port } = stalled.address() as AddressInfo;
+    try {
+      const client = new ZenRowsBatchClient("API_KEY", {
+        baseURL: `http://127.0.0.1:${port}/v1`,
+        timeout: 0.2,
+        retries: 0,
+      });
+      await expect(client.getTaskContent("job_stall", "t1")).rejects.toThrow(/timed out/);
+      await expect(client.getTaskContentBytes("job_stall", "t1")).rejects.toThrow(/timed out/);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+      await new Promise((resolve) => stalled.close(resolve));
+    }
+  }, 5_000);
 });
 
 describe("types follow the wire shapes", () => {

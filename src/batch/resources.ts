@@ -443,8 +443,8 @@ export class JobRef {
     const resp = await this.#client._postRerun(this.jobId, rest);
     let run = resp.latest_run;
     if (waitForIngest && run.ingest_status === "pending") {
-      const job = await this.#client._waitForIngestRaw(this.jobId);
-      if (job.latest_run?.run_id === run.run_id) run = job.latest_run;
+      // By run id: a replayed rerun returns its original run, which may not be the latest.
+      run = await this.#client._waitForRunIngestRaw(this.jobId, run.run_id);
     }
     return new RunHandle(this.#client, this.jobId, run.run_id, run);
   }
@@ -506,10 +506,25 @@ export class JobRef {
     await this.#client.deleteJobWebhook(this.jobId);
   }
 
-  /** Block until the current run's async-carrier ingestion has finished writing task rows. */
+  /**
+   * Block until ingestion has finished writing the run's task rows (`ingest_status` is no
+   * longer `pending`), then return the loaded job. On a ref from a `submit*` call this waits
+   * for the run that submit returned; otherwise for the job's latest run. A run stopped
+   * mid-ingest still waits until the API has settled its rows.
+   */
   async waitForIngest(
     options: { timeout?: number; pollInterval?: number; maxPollInterval?: number } = {},
   ): Promise<JobHandle> {
+    const runId = this.submitResponse?.latest_run?.run_id;
+    if (runId) {
+      await this.#client._waitForRunIngestRaw(this.jobId, runId, options);
+      return new JobHandle(
+        this.#client,
+        this.jobId,
+        await this.#client._getJobData(this.jobId),
+        this.submitResponse,
+      );
+    }
     return new JobHandle(
       this.#client,
       this.jobId,
