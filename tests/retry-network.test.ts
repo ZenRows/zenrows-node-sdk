@@ -191,11 +191,21 @@ describe("failures after the request was sent are not retried", () => {
 });
 
 describe("retried answers", () => {
-  test("free their connection: no socket stays open after retried 503s with large bodies", async () => {
+  // An answer the client drops without reading holds its connection until garbage collection.
+  // The server counts answers that have neither finished nor lost their connection. That count
+  // does not depend on the Node version, unlike open sockets. Node 20 and 22 drain a cancelled
+  // body and keep the socket for undici's keep-alive window, and buffer a small body in full.
+  test("release their connection: no answer stays held after retried 503s with large bodies", async () => {
     fastRandom();
-    const largeBody = "x".repeat(2 * 1024 * 1024);
+    // Larger than undici buffers on its own, so an unread body really holds the connection.
+    const largeBody = Buffer.alloc(8 * 1024 * 1024, "x");
+    let held = 0;
     const server = await startServer((_req, res) => {
-      res.writeHead(503, { "Content-Type": "text/plain" });
+      held += 1;
+      res.on("close", () => {
+        held -= 1;
+      });
+      res.writeHead(503, { "Content-Type": "text/plain", "Content-Length": largeBody.length });
       res.end(largeBody);
     });
     routeApiTo(server.origin);
@@ -205,13 +215,14 @@ describe("retried answers", () => {
       Array.from({ length: 5 }, () => client.fetch("https://example.com")),
     );
     for (const response of responses) await response.body?.cancel();
-    for (let i = 0; i < 50 && server.sockets.size > 0; i++) {
+    const deadline = Date.now() + 2000;
+    while (held > 0 && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
-    const open = server.sockets.size;
+    const stillHeld = held;
     await server.close();
 
     expect(server.requests).toHaveLength(15);
-    expect(open).toBe(0);
+    expect(stillHeld).toBe(0);
   });
 });
