@@ -7,7 +7,9 @@ import {
   DEFAULT_RETRIES,
   DEFAULT_RETRY_BUDGET_SECONDS,
   DEFAULT_RETRY_MAX_WAIT_SECONDS,
+  isRetryEligible,
   retryPolicy,
+  validateRetryOptions,
 } from "./retry.js";
 
 export * from "./batch/client.js";
@@ -20,6 +22,7 @@ export type * from "./batch/types.js";
 export * from "./crawl/client.js";
 export { CRAWL_NOT_ENABLED_CODE, ZenRowsCrawlError } from "./crawl/errors.js";
 export type * from "./crawl/types.js";
+export { isNoDataExtracted } from "./retry.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -60,31 +63,19 @@ async function isExtractDomainNotReady(response: Response): Promise<boolean> {
   }
 }
 
-/** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
- * of page but found no data on it. The request is not charged and the client never
- * retries it (no 422 is retried), since another try returns the same answer. Reads via `.clone()`, so the
- * original response body is left unconsumed for the caller. */
-export async function isNoDataExtracted(response: Response): Promise<boolean> {
-  if (response.status !== 422) return false;
-  try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toLowerCase() === "no_data_extracted";
-  } catch {
-    return false;
-  }
-}
-
 interface ClientConfig {
   concurrency?: number;
   /**
-   * Retries for `fetch()`, `extract()` and `post()` after a 429, 502, 503 or 504 (never
-   * charged) or a network error before any response. Default 2; 0 turns retries off. A timeout
-   * or abort is never retried: the server may still finish the request and charge it.
+   * Retries for `fetch()`, `extract()` and `post()` after a 429, 502, 503 or 504, a 422 other
+   * than `no_data_extracted`, or a failure before the request reached the server. An integer of
+   * 0 or more; default 2; 0 turns retries off. A reset after the request was sent, a timeout or
+   * an abort is never retried: the server may still finish the request and charge it. `post()`
+   * is retried only when its headers carry an `Idempotency-Key`.
    */
   retries?: number;
-  /** The longest one backoff wait may be, in seconds. Default 30. A `Retry-After` is honoured up to 30 s. */
+  /** The longest one random wait may be, in seconds (greater than 0). Default 30. It never caps a `Retry-After`. */
   retryMaxWait?: number;
-  /** No retry starts once the time spent plus the next wait would pass this, in seconds. Default 90. */
+  /** No retry starts after this many seconds since the first try started (greater than 0). Default 90. */
   retryBudget?: number;
   /** Config for `client.crawl`: its own `baseURL`, `retries` and `timeout`. */
   crawl?: CrawlClientConfig;
@@ -114,6 +105,11 @@ interface Headers {
   [x: string]: string;
 }
 
+/** When a logical call's first try started. Shared by the requests of one call (see `extract()`). */
+interface CallClock {
+  startedAt?: number;
+}
+
 export class ZenRows {
   readonly apiKey: string;
   readonly clientConfig: ClientConfig;
@@ -125,6 +121,7 @@ export class ZenRows {
   readonly crawl: ZenRowsCrawlClient;
 
   constructor(apiKey: string, clientConfig: ClientConfig = {}) {
+    validateRetryOptions(clientConfig);
     this.apiKey = apiKey;
     this.clientConfig = clientConfig;
     this.batch = new ZenRowsBatchClient(apiKey);
@@ -196,10 +193,18 @@ export class ZenRows {
       ...rest
     } = config ?? {};
     const mode = extractWireMode(rest, adaptiveStealth);
-    const response = await this.fetch(url, { ...rest, extract, mode }, opts);
+    const { headers = {} } = opts;
+    // One retry budget for the whole call: the fallback reuses the first request's start time.
+    const clock: CallClock = {};
+    const response = await this.queue.push({
+      url,
+      config: { ...rest, extract, mode },
+      headers,
+      clock,
+    });
 
     if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
-      return this.fetch(url, { ...rest, autoparse: true, mode }, opts);
+      return this.queue.push({ url, config: { ...rest, autoparse: true, mode }, headers, clock });
     }
 
     return response;
@@ -245,12 +250,14 @@ export class ZenRows {
     config,
     headers,
     data,
+    clock = {},
   }: {
     url: string;
     method?: HttpMethods;
     config?: ZenRowsConfig;
     headers: Headers;
     data?: unknown;
+    clock?: CallClock;
   }): Promise<Response> {
     const params = new URLSearchParams({
       url,
@@ -287,10 +294,14 @@ export class ZenRows {
       }
     }
 
+    // A request that is not safe to send twice (a POST without an Idempotency-Key) is sent once.
+    const eligible = isRetryEligible(method, finalHeaders, fetchOptions.body);
+    clock.startedAt ??= Date.now();
     const { retryOn, retryDelay } = retryPolicy({
-      retries: this.clientConfig.retries ?? DEFAULT_RETRIES,
+      retries: eligible ? this.clientConfig.retries ?? DEFAULT_RETRIES : 0,
       retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,
       retryBudget: this.clientConfig.retryBudget ?? DEFAULT_RETRY_BUDGET_SECONDS,
+      startedAt: clock.startedAt,
     });
     const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, {
       ...fetchOptions,
