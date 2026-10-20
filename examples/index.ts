@@ -12,7 +12,7 @@ const testPost = "https://httpbin.org/anything";
 
   try {
     const response = await client.get(urlLinks, {
-      // autoparse: true,
+      // autoparse: true, // deprecated: use client.extract() for structured data
       js_render: true,
       premium_proxy: true,
       css_extractor: '{"links": "a @href"}',
@@ -28,7 +28,7 @@ const testPost = "https://httpbin.org/anything";
 
   try {
     const response = await client.get(urlPremium, {
-      // autoparse: true,
+      // autoparse: true, // deprecated: use client.extract() for structured data
       css_extractor: '{"stats": "#result-stats", "headers": "#search a > h3"}',
       // js_render: true,
       premium_proxy: true,
