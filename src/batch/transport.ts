@@ -43,8 +43,27 @@ export type ErrorFactory = (
   extras: Record<string, unknown> | undefined,
 ) => Error;
 
-const batchError: ErrorFactory = (response, problem, extras) =>
-  new ZenRowsBatchError(response.status, problem, extras);
+const batchError: ErrorFactory = (response, problem, extras) => {
+  const raw = response.headers.get("Retry-After");
+  const seconds = raw ? Number(raw) : Number.NaN;
+  const retryAfter = Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+  return new ZenRowsBatchError(response.status, problem, extras, retryAfter);
+};
+
+/**
+ * The Batch API's 429 `quota_exceeded` is an account limit (active jobs, scheduled jobs, or
+ * an open job's task cap). It clears only when a job finishes or is deleted, so retrying it
+ * only adds delay. Reads a clone, so the body stays available for the error.
+ */
+async function isQuotaExceeded(response: Response): Promise<boolean> {
+  if (response.status !== 429) return false;
+  try {
+    const body = (await response.clone().json()) as { code?: unknown } | null;
+    return body?.code === "quota_exceeded";
+  } catch {
+    return false;
+  }
+}
 
 export interface RequestOptions {
   query?: object;
@@ -98,6 +117,20 @@ export class BatchTransport {
     try {
       await this.throwUnlessOk(response);
       return await response.text();
+    } finally {
+      clear();
+    }
+  }
+
+  /**
+   * Send a request and return its body as bytes; throw the factory's error on non-2xx. The
+   * timeout covers reading the body.
+   */
+  async requestBytes(method: string, path: string, options: RequestOptions = {}): Promise<Buffer> {
+    const { response, clear } = await this.send(method, path, options);
+    try {
+      await this.throwUnlessOk(response);
+      return Buffer.from(await response.arrayBuffer());
     } finally {
       clear();
     }
@@ -177,7 +210,12 @@ export class BatchTransport {
         throw error;
       }
 
-      if (idempotent && attempt < this.retries && retryStatuses.has(response.status)) {
+      if (
+        idempotent &&
+        attempt < this.retries &&
+        retryStatuses.has(response.status) &&
+        !(await isQuotaExceeded(response))
+      ) {
         // An unread body holds its connection until garbage collection.
         response.body?.cancel().catch(() => {});
         clear();

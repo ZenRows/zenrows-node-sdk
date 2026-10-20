@@ -18,12 +18,62 @@ export interface DownloadedResult {
 }
 
 /**
+ * A result row a bulk download left out because it has no body to fetch: an `expired` row
+ * (a successful result past the retention window) or a `failed` task. Reported through the
+ * `onSkip` option of `downloadToDir` / `downloadToMemory`.
+ */
+export interface SkippedResult {
+  taskId: string;
+  externalId?: string;
+  url: string;
+  status: "expired" | "failed";
+}
+
+/** Statuses whose rows have no stored body by design, so a bulk download skips them. */
+const SKIPPABLE_STATUSES = new Set(["expired", "failed"]);
+
+/**
+ * Split `results` into rows to fetch and rows to skip, enforcing `limit`. Only `expired`
+ * and `failed` rows without a `result_url` are skipped; any other row without one (a
+ * `successful` row missing its URL, or an unfinished task) stays in, so fetching it fails
+ * loudly instead of being dropped.
+ */
+async function partition(
+  results: AsyncIterable<TaskResult>,
+  limit: number,
+  limitName: string,
+  onSkip: ((row: SkippedResult) => void) | undefined,
+): Promise<TaskResult[]> {
+  const fetchable: TaskResult[] = [];
+  for await (const task of results) {
+    if (!task.result_url && SKIPPABLE_STATUSES.has(task.status)) {
+      onSkip?.({
+        taskId: task.task_id,
+        externalId: task.external_id,
+        url: task.url,
+        status: task.status as SkippedResult["status"],
+      });
+      continue;
+    }
+    fetchable.push(task);
+    if (fetchable.length > limit) {
+      throw new Error(`result count exceeds ${limitName} (${limit})`);
+    }
+  }
+  return fetchable;
+}
+
+/**
  * Every result body lives at a presigned `result_url` — no auth header, no API content
  * endpoint in the loop, matching the Python SDK's approach exactly.
  */
 async function fetchResultBody(task: TaskResult, maxBytes?: number): Promise<Buffer> {
   if (!task.result_url) {
-    throw new Error(`task ${task.task_id} has no result_url (not a successful task?)`);
+    const why =
+      task.status === "expired"
+        ? "its result is past the retention window (status expired)"
+        : `it has no stored result (status ${task.status})`;
+    throw new Error(`task ${task.task_id} has no result_url: ${why}`);
   }
   const response = await fetch(task.result_url);
   if (!response.ok) {
@@ -75,9 +125,16 @@ export interface DownloadToDirOptions {
   concurrency?: number;
   maxFiles?: number;
   maxBytesPerFile?: number;
+  /** Called for each `expired` or `failed` row skipped because it has no body to fetch. */
+  onSkip?: (row: SkippedResult) => void;
 }
 
-/** Write every task body in `results` to `targetDir`, one file per task. */
+/**
+ * Write every task body in `results` to `targetDir`, one file per task, and return how many
+ * files it wrote. `expired` and `failed` rows have no body: they are skipped (and passed to
+ * `onSkip`) instead of failing the download. Any other row without a `result_url` still
+ * fails it.
+ */
 export async function downloadToDir(
   results: AsyncIterable<TaskResult>,
   targetDir: string,
@@ -87,16 +144,11 @@ export async function downloadToDir(
     concurrency = 1,
     maxFiles = DEFAULT_MAX_FILES,
     maxBytesPerFile = DEFAULT_MAX_BYTES_PER_FILE,
+    onSkip,
   }: DownloadToDirOptions = {},
 ): Promise<number> {
   await mkdir(targetDir, { recursive: true });
-  const tasks: TaskResult[] = [];
-  for await (const task of results) {
-    tasks.push(task);
-    if (tasks.length > maxFiles) {
-      throw new Error(`result count exceeds maxFiles (${maxFiles})`);
-    }
-  }
+  const tasks = await partition(results, maxFiles, "maxFiles", onSkip);
 
   await runPool(tasks, concurrency, async (task: TaskResult) => {
     const body = await fetchResultBody(task, maxBytesPerFile);
@@ -114,9 +166,15 @@ export interface DownloadToMemoryOptions {
   maxCount?: number;
   maxTotalBytes?: number;
   maxBytesPerFile?: number;
+  /** Called for each `expired` or `failed` row skipped because it has no body to fetch. */
+  onSkip?: (row: SkippedResult) => void;
 }
 
-/** Load every task body in `results` into memory. */
+/**
+ * Load every task body in `results` into memory. `expired` and `failed` rows have no body:
+ * they are skipped (and passed to `onSkip`). Any other row without a `result_url` still
+ * fails the download.
+ */
 export async function downloadToMemory(
   results: AsyncIterable<TaskResult>,
   {
@@ -124,15 +182,10 @@ export async function downloadToMemory(
     maxCount = DEFAULT_MAX_COUNT_IN_MEMORY,
     maxTotalBytes = DEFAULT_MAX_TOTAL_BYTES_IN_MEMORY,
     maxBytesPerFile = DEFAULT_MAX_BYTES_PER_FILE,
+    onSkip,
   }: DownloadToMemoryOptions = {},
 ): Promise<DownloadedResult[]> {
-  const tasks: TaskResult[] = [];
-  for await (const task of results) {
-    tasks.push(task);
-    if (tasks.length > maxCount) {
-      throw new Error(`result count exceeds maxCount (${maxCount})`);
-    }
-  }
+  const tasks = await partition(results, maxCount, "maxCount", onSkip);
 
   const downloaded: DownloadedResult[] = new Array(tasks.length);
   let totalBytes = 0;
