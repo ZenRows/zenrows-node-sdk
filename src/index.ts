@@ -73,11 +73,11 @@ function warnFallbackDeprecated(): void {
 interface ClientConfig {
   concurrency?: number;
   /**
-   * Retries for `fetch()`, `extract()` and `post()` after a 429, 502, 503 or 504, a 422 other
-   * than `no_data_extracted`, or a failure before the request reached the server. An integer of
-   * 0 or more; default 2; 0 turns retries off. A reset after the request was sent, a timeout or
-   * an abort is never retried: the server may still finish the request and charge it. `post()`
-   * is retried only when its headers carry an `Idempotency-Key`.
+   * Retries for `fetch()` and `extract()` after a 429, 502, 503 or 504, a 422 other than
+   * `no_data_extracted`, or a failure before the request reached the server. An integer of 0 or
+   * more; default 2; 0 turns retries off. A reset after the request was sent, a timeout or an
+   * abort is never retried: the server may still finish the request and charge it. `post()` is
+   * never retried, whatever its headers: the API does not dedupe on `Idempotency-Key`.
    */
   retries?: number;
   /** The longest one random wait may be, in seconds (greater than 0). Default 30. It never caps a `Retry-After`. */
@@ -341,8 +341,8 @@ export class ZenRows {
       }
     }
 
-    // A request that is not safe to send twice (a POST without an Idempotency-Key) is sent once.
-    const eligible = isRetryEligible(method, finalHeaders, fetchOptions.body);
+    // A POST, or a body that cannot be sent again, goes out once: it is not safe to send twice.
+    const eligible = isRetryEligible(method, fetchOptions.body);
     const { retryOn, retryDelay } = retryPolicy({
       retries: eligible ? this.clientConfig.retries ?? DEFAULT_RETRIES : 0,
       retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,

@@ -113,17 +113,22 @@ describe("failures before the request was sent are retried", () => {
     expect(error.cause.code).toBe("ECONNREFUSED");
     expect(calls.count).toBe(3);
   });
+});
 
-  test("a refused connection is retried for a post() with an Idempotency-Key", async () => {
+describe("post() is sent once, even on a refused connection", () => {
+  test.each([
+    ["without an Idempotency-Key", {}],
+    ["with an Idempotency-Key", { "Idempotency-Key": "k1" }],
+  ])("%s", async (_label, headers: Record<string, string>) => {
     fastRandom();
     const calls = routeApiTo(await closedPortOrigin());
 
-    const error = await new ZenRows("API_KEY", { retries: 1 })
-      .post("https://example.com", {}, { headers: { "Idempotency-Key": "k1" }, data: { a: 1 } })
+    const error = await new ZenRows("API_KEY", { retries: 3 })
+      .post("https://example.com", {}, { headers, data: { a: 1 } })
       .catch((e) => e);
 
     expect(error.cause.code).toBe("ECONNREFUSED");
-    expect(calls.count).toBe(2);
+    expect(calls.count).toBe(1);
   });
 });
 

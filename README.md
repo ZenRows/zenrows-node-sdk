@@ -134,7 +134,7 @@ Sending headers to the target URL will overwrite our defaults. Be careful when d
 
 ### Retries
 
-`fetch()`, `extract()` and `post()` retry failed requests through [fetch-retry](https://github.com/jonbern/fetch-retry). `client.batch` and `client.crawl` keep their own retry rules, described in their sections. `prepareDomain()` and `preparedDomainStatus()` never retry: they send one request and reject on an error answer (see [Preparing a domain](#preparing-a-domain)).
+`fetch()`, `get()` and `extract()` retry failed requests through [fetch-retry](https://github.com/jonbern/fetch-retry). `post()` never retries. `client.batch` and `client.crawl` keep their own retry rules, described in their sections. `prepareDomain()` and `preparedDomainStatus()` never retry: they send one request and reject on an error answer (see [Preparing a domain](#preparing-a-domain)).
 
 What the client retries:
 
@@ -151,7 +151,9 @@ What the client never retries:
 Which calls the client retries:
 
 1. `fetch()`, `get()` and `extract()`: always.
-2. `post()`: only when its `headers` carry an `Idempotency-Key`. Without one, the client sends a `post()` once, because the API forwards the body to the target, and the target may act on it twice. The client sends the key to the target as a custom header, like any other header you pass.
+2. `post()`: never. The client sends a `post()` once, whatever its headers, the status or the failure. The API forwards the body to the target, and the target may act on it twice.
+3. The API does not dedupe a `post()` on an `Idempotency-Key` header, so the client does not retry on one.
+4. If you need to retry a `post()`, write the retry yourself.
 
 How long the client waits between tries:
 
@@ -180,7 +182,7 @@ Compatible with `proxy_country`, `js_instructions`, and `custom_headers`.
 
 The SDK also offers POST requests by calling the `client.post` method. It can receive a new parameter `data` that represents the data sent in, for example, a form.
 
-The client sends a `post()` once, unless you pass an `Idempotency-Key` header. See [Retries](#retries).
+The client sends a `post()` once and never retries it, whatever `retries` says. See [Retries](#retries).
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -189,7 +191,7 @@ const apiKey = "YOUR-API-KEY";
 const url = "https://httpbin.org/anything";
 
 (async () => {
-  const client = new ZenRows(apiKey, { retries: 1 });
+  const client = new ZenRows(apiKey);
 
   const response = await client.post(
     url,

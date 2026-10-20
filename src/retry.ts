@@ -1,6 +1,7 @@
-// Retry policy for `fetch()`, `extract()` and `post()`. The same policy ships in every ZenRows
-// client: retry only answers that say "try again" and are never charged, retry only requests
-// that are safe to send twice, back off with full jitter, and start no retry after the budget.
+// Retry policy for `fetch()` and `extract()`. `post()` goes through it too, but is never retried.
+// The same policy ships in every ZenRows client: retry only answers that say "try again" and are
+// never charged, retry only requests that are safe to send twice, back off with full jitter, and
+// start no retry after the budget.
 
 /** Statuses retried: rate limited, or the gateway or its upstream could not answer. Never charged. */
 export const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
@@ -20,7 +21,10 @@ const PRE_SEND_ERROR_CODES: ReadonlySet<string> = new Set([
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-/** Methods that are always safe to send again. Others need an `Idempotency-Key` header. */
+/**
+ * The only methods the client retries. A POST, PUT, PATCH or DELETE is sent once, whatever its
+ * headers: the API does not dedupe on `Idempotency-Key`. It only forwards it to the target.
+ */
 const IDEMPOTENT_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
 export const DEFAULT_RETRIES = 2;
@@ -84,33 +88,23 @@ export async function isNoDataExtracted(response: Response): Promise<boolean> {
   }
 }
 
-/** True when the body can be sent again unchanged. A one-shot stream cannot. */
+/** True when the body is none, a string or bytes, so it can be sent again. A stream cannot. */
 function isReplayableBody(body: unknown): boolean {
   return (
     body === undefined ||
     body === null ||
     typeof body === "string" ||
     body instanceof ArrayBuffer ||
-    ArrayBuffer.isView(body) ||
-    body instanceof URLSearchParams ||
-    body instanceof Blob
+    ArrayBuffer.isView(body)
   );
 }
 
 /**
- * True when a request is safe to send more than once. GET, HEAD and OPTIONS always are. Any
- * other method is only with an `Idempotency-Key` header and a body that can be sent again.
+ * True when a request is safe to send more than once: a GET, HEAD or OPTIONS whose body is none,
+ * a string or bytes. Any other method, or a body such as a stream, is sent once.
  */
-export function isRetryEligible(
-  method: string,
-  headers: Record<string, string>,
-  body: unknown,
-): boolean {
-  if (IDEMPOTENT_METHODS.has(method.toUpperCase())) return true;
-  const hasIdempotencyKey = Object.entries(headers).some(
-    ([name, value]) => name.toLowerCase() === "idempotency-key" && value.trim() !== "",
-  );
-  return hasIdempotencyKey && isReplayableBody(body);
+export function isRetryEligible(method: string, body: unknown): boolean {
+  return IDEMPOTENT_METHODS.has(method.toUpperCase()) && isReplayableBody(body);
 }
 
 /** True when fetch failed before the request was written to the server (see `PRE_SEND_ERROR_CODES`). */

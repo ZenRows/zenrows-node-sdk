@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ZenRows, ZenRowsPreparedDomainError } from "../src";
@@ -116,24 +117,44 @@ describe("conformance vectors", () => {
     expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(false);
   });
 
-  test("a GET, HEAD or OPTIONS is always eligible", () => {
+  test("a GET, HEAD or OPTIONS with no body, a string or bytes is eligible", () => {
+    const bodies = [
+      undefined,
+      null,
+      "",
+      "{}",
+      new Uint8Array([1]),
+      Buffer.from("a"),
+      new ArrayBuffer(1),
+    ];
     for (const method of ["GET", "HEAD", "OPTIONS", "get"]) {
-      expect(isRetryEligible(method, {}, undefined)).toBe(true);
+      for (const body of bodies) {
+        expect(isRetryEligible(method, body)).toBe(true);
+      }
     }
   });
 
-  test("a POST without an Idempotency-Key is not eligible", () => {
-    expect(isRetryEligible("POST", {}, "{}")).toBe(false);
-    expect(isRetryEligible("POST", { "Idempotency-Key": " " }, "{}")).toBe(false);
+  test("a POST, PUT, PATCH or DELETE is never eligible, whatever its body", () => {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "post"]) {
+      for (const body of [undefined, "{}", new Uint8Array([1])]) {
+        expect(isRetryEligible(method, body)).toBe(false);
+      }
+    }
   });
 
-  test("a POST with an Idempotency-Key is eligible only with a body it can send again", () => {
-    const key = { "idempotency-key": "k1" };
-    for (const body of [undefined, "{}", new Uint8Array([1]), new URLSearchParams("a=1")]) {
-      expect(isRetryEligible("POST", key, body)).toBe(true);
+  test("a GET with a one-shot body (a stream, a reader or a generator) is not eligible", () => {
+    async function* generator() {
+      yield "a";
     }
-    expect(isRetryEligible("POST", key, new ReadableStream())).toBe(false);
-    expect(isRetryEligible("PUT", { "Idempotency-Key": "k1" }, "{}")).toBe(true);
+    const oneShot = [
+      new ReadableStream(),
+      new ReadableStream().getReader(),
+      Readable.from(["a"]),
+      generator(),
+    ];
+    for (const body of oneShot) {
+      expect(isRetryEligible("GET", body)).toBe(false);
+    }
   });
 });
 
@@ -325,45 +346,54 @@ describe("ZenRows client retries", () => {
     expect(calls).toBe(1);
   });
 
-  test("post() without an Idempotency-Key is sent once, even on a 503", async () => {
-    const bodies: string[] = [];
-    server.use(
-      http.post(apiUrl, async ({ request }) => {
-        bodies.push(await request.text());
-        return new HttpResponse(null, { status: 503 });
-      }),
+  const retriedAnswers = [
+    [503, () => new HttpResponse(null, { status: 503 })],
+    [429, () => new HttpResponse(null, { status: 429 })],
+    [422, () => HttpResponse.json({ code: "RESP001" }, { status: 422 })],
+  ] as const;
+
+  describe.each([
+    ["without an Idempotency-Key", {}],
+    ["with an Idempotency-Key", { "Idempotency-Key": "order-key" }],
+  ])("post() %s", (_label, headers: Record<string, string>) => {
+    test.each(retriedAnswers)(
+      "is sent once on a %i, even with retries: 3",
+      async (code, answer) => {
+        const bodies: string[] = [];
+        server.use(
+          http.post(apiUrl, async ({ request }) => {
+            bodies.push(await request.text());
+            return answer();
+          }),
+        );
+
+        const pending = new ZenRows("API_KEY", { retries: 3 }).post(
+          url,
+          {},
+          { headers, data: { order: 1 } },
+        );
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect((await pending).status).toBe(code);
+        expect(bodies).toEqual(['{"order":1}']);
+      },
     );
-
-    const pending = new ZenRows("API_KEY", { retries: 3 }).post(url, {}, { data: { order: 1 } });
-    await vi.advanceTimersByTimeAsync(10_000);
-
-    expect((await pending).status).toBe(503);
-    expect(bodies).toEqual(['{"order":1}']);
   });
 
-  test("post() with an Idempotency-Key is retried with the same body", async () => {
-    const bodies: string[] = [];
-    const keys: (string | null)[] = [];
+  test.each(retriedAnswers)("fetch() is still retried on a %i", async (code, answer) => {
+    let calls = 0;
     server.use(
-      http.post(apiUrl, async ({ request }) => {
-        bodies.push(await request.text());
-        keys.push(request.headers.get("Idempotency-Key"));
-        return bodies.length === 1
-          ? new HttpResponse(null, { status: 503 })
-          : HttpResponse.json({ ok: 1 });
+      http.get(apiUrl, () => {
+        calls += 1;
+        return answer();
       }),
     );
 
-    const pending = new ZenRows("API_KEY").post(
-      url,
-      {},
-      { headers: { "Idempotency-Key": "order-key" }, data: { order: 1 } },
-    );
-    await vi.advanceTimersByTimeAsync(250);
+    const pending = new ZenRows("API_KEY", { retries: 3 }).fetch(url);
+    await vi.advanceTimersByTimeAsync(60_000);
 
-    expect((await pending).status).toBe(200);
-    expect(bodies).toEqual(['{"order":1}', '{"order":1}']);
-    expect(keys).toEqual(["order-key", "order-key"]);
+    expect((await pending).status).toBe(code);
+    expect(calls).toBe(4);
   });
 });
 
