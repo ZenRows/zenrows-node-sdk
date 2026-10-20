@@ -141,10 +141,32 @@ export function isRetryEligible(method: string, body: unknown): boolean {
   return IDEMPOTENT_METHODS.has(method.toUpperCase()) && isReplayableBody(body);
 }
 
-/** True when fetch failed before the request was written to the server (see `PRE_SEND_ERROR_CODES`). */
+interface ErrorCause {
+  code?: unknown;
+  syscall?: unknown;
+  errors?: unknown;
+}
+
+/** True when one error says the connection was never made: a listed code, or a connect timeout. */
+function isConnectFailure(cause: ErrorCause | null | undefined): boolean {
+  const code = cause?.code;
+  if (typeof code !== "string") return false;
+  return PRE_SEND_ERROR_CODES.has(code) || (code === "ETIMEDOUT" && cause?.syscall === "connect");
+}
+
+/**
+ * True when fetch failed before the request was written to the server (see `PRE_SEND_ERROR_CODES`).
+ * With happy eyeballs, Node tries each address family and throws an `AggregateError` with one
+ * error per try. Its own `code` is the first try's, so the inner errors decide: every one must
+ * be a connect failure. An `ETIMEDOUT` from any syscall but `connect` is a read timeout.
+ */
 function isPreSendFailure(error: unknown): boolean {
-  const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
-  return typeof code === "string" && PRE_SEND_ERROR_CODES.has(code);
+  const cause = (error as { cause?: ErrorCause } | null)?.cause;
+  const inner = cause?.errors;
+  if (Array.isArray(inner)) {
+    return inner.length > 0 && inner.every((each) => isConnectFailure(each as ErrorCause));
+  }
+  return isConnectFailure(cause);
 }
 
 /** True when the answer says "try again": 429, 502, 503, 504, or a 422 other than `no_data_extracted`. */

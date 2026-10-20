@@ -1,5 +1,6 @@
 // Retry decisions against a real node:http server through Node's real fetch, so each failure
 // reaches the policy in the exact shape undici produces. The request mocks are off in this file.
+import { lookup } from "node:dns/promises";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
@@ -102,6 +103,12 @@ async function undiciAgent(origin: string): Promise<new (options: object) => obj
 
 const fastRandom = () => vi.spyOn(Math, "random").mockReturnValue(0);
 
+/** True when `localhost` resolves to an IPv4 and an IPv6 address, as Node's fetch looks it up. */
+const localhostHasBothFamilies = await lookup("localhost", { all: true }).then(
+  (addresses) => new Set(addresses.map((each) => each.family)).size === 2,
+  () => false,
+);
+
 describe("failures before the request was sent are retried", () => {
   test("a refused connection is retried `retries` times, then throws", async () => {
     fastRandom();
@@ -113,6 +120,28 @@ describe("failures before the request was sent are retried", () => {
     expect(error.cause.code).toBe("ECONNREFUSED");
     expect(calls.count).toBe(3);
   });
+
+  // `localhost` resolves to ::1 and 127.0.0.1 on most hosts. Node then tries both (happy
+  // eyeballs) and the cause is an AggregateError with one ECONNREFUSED per address.
+  test.skipIf(!localhostHasBothFamilies)(
+    "a refused connection to localhost, on both address families, is retried",
+    async () => {
+      fastRandom();
+      const port = new URL(await closedPortOrigin()).port;
+      const calls = routeApiTo(`http://localhost:${port}`);
+
+      const error = await new ZenRows("API_KEY", { retries: 2 })
+        .fetch("https://example.com")
+        .catch((e) => e);
+
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error.cause).toBeInstanceOf(AggregateError);
+      const innerCodes = error.cause.errors.map((inner: { code: string }) => inner.code);
+      expect(innerCodes.length).toBeGreaterThanOrEqual(2);
+      expect(new Set(innerCodes)).toEqual(new Set(["ECONNREFUSED"]));
+      expect(calls.count).toBe(3);
+    },
+  );
 });
 
 describe("original_status: true", () => {

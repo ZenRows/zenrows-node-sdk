@@ -141,6 +141,7 @@ What the client retries:
 1. Status codes 429, 502, 503 and 504. The API does not charge for them.
 2. A `422`, except one with `code: "no_data_extracted"`. That one is a final answer (see [Extract](#extract)).
 3. A failure before the request reached the API: connection refused, a name that does not resolve, an unreachable network or host, or a connect timeout.
+4. A connection that timed out while connecting. When Node tries several addresses, every try must fail this way or as in item 3.
 
 What the client never retries:
 

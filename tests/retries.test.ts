@@ -30,6 +30,25 @@ const status = (code: number, headers: Record<string, string> = {}) =>
 const fetchFailed = (code: string) =>
   new TypeError("fetch failed", { cause: Object.assign(new Error(code), { code }) });
 
+/** A Node system error, as a socket raises it: a `code` and the `syscall` that failed. */
+const systemError = (code: string, syscall?: string) =>
+  Object.assign(new Error(`${syscall ?? "?"} ${code}`), { code, syscall });
+
+/**
+ * `fetch failed` caused by an `AggregateError`, as Node throws it when every address it tried
+ * failed. Two shapes: Node copies the first inner error's `code` onto the aggregate, and a
+ * runtime that does not leaves it off. The policy must judge both by the inner errors alone.
+ */
+const aggregateFailed = (errors: Error[]) => {
+  const withCode = Object.assign(new AggregateError(errors), {
+    code: (errors[0] as { code?: string } | undefined)?.code,
+  });
+  return [
+    new TypeError("fetch failed", { cause: withCode }),
+    new TypeError("fetch failed", { cause: new AggregateError(errors) }),
+  ];
+};
+
 /** The highest value `Math.random()` can return. */
 const RANDOM_MAX = 1 - Number.EPSILON;
 
@@ -103,6 +122,44 @@ describe("conformance vectors", () => {
   test("a connect timeout is retried", async () => {
     const error = fetchFailed("UND_ERR_CONNECT_TIMEOUT");
     expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(true);
+  });
+
+  test("a plain connect timeout (ETIMEDOUT from connect) is retried", async () => {
+    const error = new TypeError("fetch failed", { cause: systemError("ETIMEDOUT", "connect") });
+    expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(true);
+  });
+
+  test.each([
+    ["from read", "read"],
+    ["with no syscall", undefined],
+  ])("a plain ETIMEDOUT %s is not retried", async (_label, syscall) => {
+    const error = new TypeError("fetch failed", { cause: systemError("ETIMEDOUT", syscall) });
+    expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(false);
+  });
+
+  describe("a happy-eyeballs AggregateError", () => {
+    const refused = () => systemError("ECONNREFUSED", "connect");
+    const connectTimeout = () => systemError("ETIMEDOUT", "connect");
+
+    test.each([
+      ["refused on every address", [refused(), refused()]],
+      ["a connect timeout on every address", [connectTimeout(), connectTimeout()]],
+      ["refused on one address, a connect timeout on the other", [refused(), connectTimeout()]],
+    ])("%s is retried", async (_label, errors) => {
+      for (const error of aggregateFailed(errors)) {
+        expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(true);
+      }
+    });
+
+    test.each([
+      ["a read timeout on one address", [systemError("ETIMEDOUT", "read"), refused()]],
+      ["a reset on one address", [refused(), systemError("ECONNRESET", "read")]],
+      ["no inner error", []],
+    ])("%s is not retried", async (_label, errors) => {
+      for (const error of aggregateFailed(errors)) {
+        expect(await policyAt({ ms: 0 }).retryOn(0, error, null)).toBe(false);
+      }
+    });
   });
 
   test.each([
