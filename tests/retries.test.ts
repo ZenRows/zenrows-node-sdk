@@ -1,6 +1,6 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { ZenRows } from "../src";
+import { ZenRows, ZenRowsPreparedDomainError } from "../src";
 import { backoffMs, isRetryEligible, retryAfterMs, retryPolicy } from "../src/retry";
 import { server } from "./_setup";
 
@@ -164,12 +164,6 @@ describe("retryPolicy", () => {
     expect(await policy.retryOn(0, null, status(503, { "Retry-After": "7" }))).toBe(true);
     clock.ms = 3001;
     expect(await policy.retryOn(1, null, status(503, { "Retry-After": "7" }))).toBe(false);
-  });
-
-  test("a start time passed in counts against the budget", async () => {
-    const clock = { ms: 8000 };
-    const policy = policyAt(clock, { retryBudget: 10, startedAt: 0 });
-    expect(await policy.retryOn(0, null, status(503, { "Retry-After": "3" }))).toBe(false);
   });
 
   test("cancels the body of a response it retries, and leaves a final one unread", async () => {
@@ -371,47 +365,52 @@ describe("ZenRows client retries", () => {
     expect(bodies).toEqual(['{"order":1}', '{"order":1}']);
     expect(keys).toEqual(["order-key", "order-key"]);
   });
+});
 
-  test("the extract() autoparse fallback shares the first request's budget", async () => {
-    const urls: URL[] = [];
-    server.use(
-      http.get(apiUrl, ({ request }) => {
-        const requestUrl = new URL(request.url);
-        urls.push(requestUrl);
-        if (requestUrl.searchParams.get("autoparse") !== "true" && urls.length > 1) {
-          return HttpResponse.json({ code: "REQS007" }, { status: 403 });
+describe("prepared-domain calls are never retried", () => {
+  // Their 429 (`out_of_allowance`) and 503 (`overloaded`, `disabled`) are answers to read, not
+  // to resend: the caller gets them on the first attempt, even with retries on.
+  const preparedDomains = "https://api.zenrows.com/v1/extract/prepared-domains";
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const calls = [
+    ["prepareDomain", (client: ZenRows) => client.prepareDomain("www.example.com", [url])],
+    ["preparedDomainStatus", (client: ZenRows) => client.preparedDomainStatus("www.example.com")],
+  ] as const;
+
+  for (const [name, call] of calls) {
+    for (const code of [429, 503]) {
+      test(`${name}() rejects on the first ${code}, with the default and with retries: 5`, async () => {
+        let requests = 0;
+        const answer = () => {
+          requests += 1;
+          return HttpResponse.json({ code: "x" }, { status: code });
+        };
+        server.use(
+          http.post(preparedDomains, answer),
+          http.get(`${preparedDomains}/:domain`, answer),
+        );
+
+        for (const client of [new ZenRows("API_KEY"), new ZenRows("API_KEY", { retries: 5 })]) {
+          requests = 0;
+          const pending = call(client).catch((error: unknown) => error);
+          await vi.advanceTimersByTimeAsync(60_000);
+          const error = await pending;
+
+          expect(error).toBeInstanceOf(ZenRowsPreparedDomainError);
+          expect((error as ZenRowsPreparedDomainError).status).toBe(code);
+          expect(requests).toBe(1);
         }
-        return new HttpResponse(null, { status: 503, headers: { "Retry-After": "20" } });
-      }),
-    );
-
-    const pending = new ZenRows("API_KEY", { retries: 5, retryBudget: 45 }).extract(url);
-    await vi.advanceTimersByTimeAsync(120_000);
-    const response = await pending;
-
-    // First request: 503, wait 20 s, 403 (20 s spent). Fallback: 503, wait 20 s (40 s spent),
-    // 503; another wait would end at 60 s, past 45 s. A fresh budget would allow one more try.
-    expect(response.status).toBe(503);
-    expect(urls.map((u) => u.searchParams.get("autoparse"))).toEqual([null, null, "true", "true"]);
-  });
-
-  test("the extract() autoparse fallback is one request when it succeeds", async () => {
-    const urls: URL[] = [];
-    server.use(
-      http.get(apiUrl, ({ request }) => {
-        urls.push(new URL(request.url));
-        return urls.length === 1
-          ? HttpResponse.json({ code: "REQS007" }, { status: 403 })
-          : HttpResponse.json([{ found: "via autoparse" }]);
-      }),
-    );
-
-    const response = await new ZenRows("API_KEY").extract(url);
-
-    expect(response.status).toBe(200);
-    expect(urls).toHaveLength(2);
-    expect(urls[1]?.searchParams.get("autoparse")).toBe("true");
-  });
+      });
+    }
+  }
 });
 
 describe("retry options are validated", () => {

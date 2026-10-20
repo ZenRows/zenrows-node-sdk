@@ -1,4 +1,4 @@
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, type JsonBodyType } from "msw";
 import { type Mock, beforeEach, describe, expect, test, vi } from "vitest"; //TODO(Nestor): Try to use globals instead of importing
 import packageJson from "../package.json" with { type: "json" };
 import { ZenRows } from "../src";
@@ -138,140 +138,86 @@ describe("ZenRows Client Get", () => {
     expect(parsedUrl.searchParams.get("extract")).toBe("native");
   });
 
-  describe("extract() Autoparse fallback", () => {
-    test("retries once with autoparse when the domain isn't prepared yet (REQS007)", async () => {
-      let secondCallUrl: URL | undefined;
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", ({ request }) => {
-          attempt += 1;
-          if (attempt === 1) {
-            return HttpResponse.json(
-              { code: "REQS007", title: "Domain not prepared for Extract" },
-              { status: 403 },
-            );
-          }
-          secondCallUrl = new URL(request.url);
-          return HttpResponse.json([{ found: "via autoparse" }]);
-        }),
-      );
-
-      const response = await client.extract(url);
-
-      expect(response.status).toBe(200);
-      expect(attempt).toBe(2);
-      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
-      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
-    });
-
-    test("does not retry for a 403 that isn't REQS007 (e.g. a bad key)", async () => {
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", () => {
-          attempt += 1;
-          return HttpResponse.json({ code: "AUTH002", title: "Invalid API key" }, { status: 403 });
-        }),
-      );
-
-      const response = await client.extract(url);
-
-      expect(response.status).toBe(403);
-      expect(attempt).toBe(1);
-    });
-
-    test("retries once with autoparse on the legacy AUTH010", async () => {
-      let secondCallUrl: URL | undefined;
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", ({ request }) => {
-          attempt += 1;
-          if (attempt === 1) {
-            return HttpResponse.json(
-              { code: "AUTH010", title: "Domain not enabled" },
-              { status: 402 },
-            );
-          }
-          secondCallUrl = new URL(request.url);
-          return HttpResponse.json([{ found: "via autoparse" }]);
-        }),
-      );
-
-      const response = await client.extract(url);
-
-      expect(response.status).toBe(200);
-      expect(attempt).toBe(2);
-      expect(secondCallUrl?.searchParams.get("autoparse")).toBe("true");
-      expect(secondCallUrl?.searchParams.has("extract")).toBe(false);
-      expect(secondCallUrl?.searchParams.get("mode")).toBe("auto");
-    });
-
-    test("the fallback request also skips Adaptive Stealth Mode with premium_proxy", async () => {
+  describe("extract() never falls back to autoparse", () => {
+    // Counts every request to the API and answers each one from `responses` in order.
+    const answer = (responses: Array<{ status: number; body: JsonBodyType }>) => {
       const urls: URL[] = [];
       server.use(
         http.get("https://api.zenrows.com/v1/", ({ request }) => {
           urls.push(new URL(request.url));
-          if (urls.length === 1) {
-            return HttpResponse.json({ code: "REQS007" }, { status: 403 });
-          }
-          return HttpResponse.json([{ found: "via autoparse" }]);
+          const next = responses[Math.min(urls.length, responses.length) - 1];
+          return HttpResponse.json(next?.body, { status: next?.status });
         }),
       );
+      return urls;
+    };
 
-      const response = await client.extract(url, { premium_proxy: true });
+    const notReady = [
+      {
+        name: "REQS007",
+        status: 403,
+        body: { code: "REQS007", reason: "domain_not_prepared", title: "Domain not prepared" },
+      },
+      {
+        name: "the legacy AUTH010",
+        status: 402,
+        body: { code: "AUTH010", title: "Domain not enabled" },
+      },
+    ];
 
-      expect(response.status).toBe(200);
-      expect(urls).toHaveLength(2);
-      expect(urls[0]?.searchParams.has("mode")).toBe(false);
-      expect(urls[1]?.searchParams.has("mode")).toBe(false);
-      expect(urls[1]?.searchParams.get("autoparse")).toBe("true");
+    // First in the block: the warning is emitted once per process.
+    test("fallbackToAutoparse: true emits one DeprecationWarning per process", async () => {
+      const emit = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+      answer([{ status: 403, body: { code: "REQS007" } }]);
+
+      await client.extract(url, { fallbackToAutoparse: true });
+      await client.extract(url, { fallbackToAutoparse: true });
+
+      expect(emit).toHaveBeenCalledTimes(1);
+      const [message, options] = emit.mock.calls[0] ?? [];
+      expect(String(message)).toContain("prepareDomain()");
+      expect(options).toMatchObject({ type: "DeprecationWarning" });
+      emit.mockRestore();
     });
 
-    test("does not retry when fallbackToAutoparse is false", async () => {
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", () => {
-          attempt += 1;
-          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
-        }),
-      );
+    for (const { name, status, body } of notReady) {
+      test(`returns ${name} as is, in one request`, async () => {
+        const emit = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+        const urls = answer([
+          { status, body },
+          { status: 200, body: [{ found: "via autoparse" }] },
+        ]);
 
-      const response = await client.extract(url, { fallbackToAutoparse: false });
+        const response = await client.extract(url);
 
-      expect(response.status).toBe(402);
-      expect(attempt).toBe(1);
-    });
+        expect(response.status).toBe(status);
+        expect(await response.json()).toEqual(body);
+        expect(urls).toHaveLength(1);
+        expect(urls[0]?.searchParams.has("autoparse")).toBe(false);
+        expect(emit).not.toHaveBeenCalled();
+        emit.mockRestore();
+      });
 
-    test("does not retry for a 402 that isn't AUTH010 (e.g. out of credits)", async () => {
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", () => {
-          attempt += 1;
-          return HttpResponse.json(
-            { code: "AUTH004", title: "No credit available" },
-            { status: 402 },
-          );
-        }),
-      );
+      test(`returns ${name} as is, in one request, with the deprecated fallbackToAutoparse`, async () => {
+        const urls = answer([
+          { status, body },
+          { status: 200, body: [{ found: "via autoparse" }] },
+        ]);
+
+        const response = await client.extract(url, { fallbackToAutoparse: true });
+
+        expect(response.status).toBe(status);
+        expect(urls).toHaveLength(1);
+        expect(urls[0]?.searchParams.has("autoparse")).toBe(false);
+      });
+    }
+
+    test("the REQS007 reason is readable from the response body", async () => {
+      answer([{ status: 403, body: { code: "REQS007", reason: "page_not_recognised" } }]);
 
       const response = await client.extract(url);
 
-      expect(response.status).toBe(402);
-      expect(attempt).toBe(1);
-    });
-
-    test("does not retry for non-auto modes", async () => {
-      let attempt = 0;
-      server.use(
-        http.get("https://api.zenrows.com/v1/", () => {
-          attempt += 1;
-          return HttpResponse.json({ code: "AUTH010" }, { status: 402 });
-        }),
-      );
-
-      const response = await client.extract(url, { extract: "native" });
-
-      expect(response.status).toBe(402);
-      expect(attempt).toBe(1);
+      expect(((await response.json()) as { reason?: string }).reason).toBe("page_not_recognised");
     });
   });
 

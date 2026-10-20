@@ -42,11 +42,6 @@ export interface RetryPolicyOptions {
   retryMaxWait: number;
   /** No retry starts once the time spent plus the next wait would pass this, in seconds. */
   retryBudget: number;
-  /**
-   * When the logical call's first try started, in `now()` milliseconds. A fallback request that
-   * belongs to the same call passes the first request's start, so it gets no fresh budget.
-   */
-  startedAt?: number;
   /** Clock in milliseconds; tests replace it. */
   now?: () => number;
   /** Uniform random number in [0, 1); tests replace it. */
@@ -146,7 +141,7 @@ export function backoffMs(attempt: number, maxWaitMs: number, random: () => numb
 
 /**
  * The `retryOn` and `retryDelay` pair for one request through fetch-retry. Build one per
- * request: it remembers when the call started and the wait it chose in `retryOn`, which
+ * request: it remembers when the first try started and the wait it chose in `retryOn`, which
  * fetch-retry then reads through `retryDelay`.
  */
 export function retryPolicy(options: RetryPolicyOptions) {
@@ -154,7 +149,7 @@ export function retryPolicy(options: RetryPolicyOptions) {
   const random = options.random ?? Math.random;
   const maxWaitMs = options.retryMaxWait * 1000;
   const budgetMs = options.retryBudget * 1000;
-  const startedAt = options.startedAt ?? now();
+  const startedAt = now();
   let nextDelayMs = 0;
 
   return {

@@ -4,6 +4,11 @@ import packageJson from "../package.json" with { type: "json" };
 import { ZenRowsBatchClient } from "./batch/client.js";
 import { type CrawlClientConfig, ZenRowsCrawlClient } from "./crawl/client.js";
 import {
+  type PreparedDomainStatus,
+  checkDomain,
+  preparedDomainsRequest,
+} from "./extract/prepared-domains.js";
+import {
   DEFAULT_RETRIES,
   DEFAULT_RETRY_BUDGET_SECONDS,
   DEFAULT_RETRY_MAX_WAIT_SECONDS,
@@ -22,6 +27,11 @@ export type * from "./batch/types.js";
 export * from "./crawl/client.js";
 export { CRAWL_NOT_ENABLED_CODE, ZenRowsCrawlError } from "./crawl/errors.js";
 export type * from "./crawl/types.js";
+export {
+  type PreparedDomainProblem,
+  type PreparedDomainStatus,
+  ZenRowsPreparedDomainError,
+} from "./extract/prepared-domains.js";
 export { isNoDataExtracted } from "./retry.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
@@ -46,21 +56,18 @@ function extractWireMode(config: ZenRowsConfig, adaptiveStealth: boolean): "auto
   return "auto";
 }
 
-/** True when a response says Extract can't serve the target domain yet: a 403
- * carrying REQS007 (domain not prepared yet) or a 402 carrying the legacy
- * domain-not-enabled code AUTH010. Any other 402/403 (no credits, bad key) is
- * not. Reads via `.clone()` so the original response body is left unconsumed
- * for the caller. */
-async function isExtractDomainNotReady(response: Response): Promise<boolean> {
-  const expected =
-    response.status === 403 ? "REQS007" : response.status === 402 ? "AUTH010" : undefined;
-  if (!expected) return false;
-  try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toUpperCase() === expected;
-  } catch {
-    return false;
-  }
+let fallbackDeprecationWarned = false;
+
+/** Warns once per process that `fallbackToAutoparse` no longer does anything. */
+function warnFallbackDeprecated(): void {
+  if (fallbackDeprecationWarned || typeof process === "undefined" || !process.emitWarning) return;
+  fallbackDeprecationWarned = true;
+  process.emitWarning(
+    "fallbackToAutoparse is deprecated and has no effect: extract() no longer retries with " +
+      "autoparse. On a 403 REQS007, check `reason` in the problem body; for " +
+      "domain_not_prepared, prepare the domain with prepareDomain().",
+    { type: "DeprecationWarning", code: "ZENROWS_FALLBACK_TO_AUTOPARSE" },
+  );
 }
 
 interface ClientConfig {
@@ -85,6 +92,8 @@ export interface ZenRowsConfig {
    * viable request configuration and escalates to js_render/premium_proxy only when the
    * target needs it, billing only for the configuration that succeeds. */
   mode?: "auto";
+  /** @deprecated Autoparse is deprecated. Use `client.extract()` for structured data,
+   * or `css_extractor`. */
   autoparse?: boolean;
   css_extractor?: string;
   js_render?: boolean;
@@ -103,11 +112,6 @@ export interface ZenRowsConfig {
 
 interface Headers {
   [x: string]: string;
-}
-
-/** When a logical call's first try started. Shared by the requests of one call (see `extract()`). */
-interface CallClock {
-  startedAt?: number;
 }
 
 export class ZenRows {
@@ -166,12 +170,21 @@ export class ZenRows {
    * rejects either combined with Adaptive Stealth Mode) or its own `mode`. Pass
    * `adaptiveStealth: false` to turn it off entirely.
    *
-   * Extract works on any domain Zenrows has prepared, with any active API key. On a
-   * domain that isn't prepared yet, `extract=auto` returns a 403 with `code: "REQS007"`
-   * (prepare it with `POST /v1/extract/prepared-domains`); the legacy domain-not-enabled
-   * error is a 402 with `code: "AUTH010"`. By default this method catches either and
-   * retries once with `autoparse: true` instead of returning the error response — pass
-   * `fallbackToAutoparse: false` to disable that and get the raw error response back.
+   * Extract works on any prepared domain (you can prepare one yourself with
+   * `POST /v1/extract/prepared-domains`), with any active API key. A 403 with
+   * `code: "REQS007"` means Extract can't extract this page. Check `reason` in the problem
+   * body (`(await response.json()).reason`) when present; older responses may not carry it:
+   *
+   * - `domain_not_prepared`: prepare the domain with `prepareDomain()`, poll
+   *   `preparedDomainStatus()` until `status` is `"ready"`, then retry.
+   * - `page_not_recognised`: the domain is served, but this page isn't one Extract extracts
+   *   (a home, search, login or category page). Try a product, article or listing page, or
+   *   retry once in a few minutes. Preparing the domain again changes nothing.
+   * - `domain_not_enabled`: preparing doesn't help. Use `css_extractor`, or contact support.
+   *
+   * The legacy domain-not-enabled error is a 402 with `code: "AUTH010"`. Both error
+   * responses are returned to you as is, in one request; extract() never retries them with
+   * autoparse.
    *
    * A 422 with `code: "no_data_extracted"` means Extract knows this kind of page but
    * found no data on it. It is not charged and is never retried; check it with
@@ -181,6 +194,8 @@ export class ZenRows {
     url: string,
     config?: ZenRowsConfig & {
       extract?: ExtractMode;
+      /** @deprecated Has no effect: extract() no longer retries with autoparse. Passing
+       * `true` emits a `DeprecationWarning` once per process. */
       fallbackToAutoparse?: boolean;
       adaptiveStealth?: boolean;
     },
@@ -188,26 +203,60 @@ export class ZenRows {
   ): Promise<Response> {
     const {
       extract = "auto",
-      fallbackToAutoparse = true,
+      fallbackToAutoparse = false,
       adaptiveStealth = true,
       ...rest
     } = config ?? {};
+    if (fallbackToAutoparse) warnFallbackDeprecated();
     const mode = extractWireMode(rest, adaptiveStealth);
-    const { headers = {} } = opts;
-    // One retry budget for the whole call: the fallback reuses the first request's start time.
-    const clock: CallClock = {};
-    const response = await this.queue.push({
-      url,
-      config: { ...rest, extract, mode },
-      headers,
-      clock,
+    return this.fetch(url, { ...rest, extract, mode }, opts);
+  }
+
+  /**
+   * Submit `domain` for Extract preparation (`POST /v1/extract/prepared-domains`) and return
+   * the parsed status object the API answers with `202`: `domain`, `status` (`"preparing"`,
+   * `"ready"` or `"failed"`), `state`, `submitted_at`, `updated_at`.
+   *
+   * `domain` is the domain without a scheme. `exampleUrls` are 1 to 5 URLs on that domain,
+   * one per kind of page you want to extract. Submitting a domain that is already prepared
+   * returns its current status instead of starting a new run.
+   *
+   * Preparation takes minutes. This method does not wait for it: call
+   * `preparedDomainStatus(domain)` until `status` is no longer `"preparing"`. These endpoints
+   * don't fetch pages and cost no credits.
+   *
+   * Rejects with a `TypeError` for an empty `domain`, before any request, and with
+   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400 `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or 503 `overloaded` /
+   * `disabled`.
+   */
+  public async prepareDomain(domain: string, exampleUrls: string[]): Promise<PreparedDomainStatus> {
+    checkDomain(domain);
+    return preparedDomainsRequest(`${API_URL}extract/prepared-domains`, {
+      method: "POST",
+      headers: { ...this.preparedDomainsHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ domain, example_urls: exampleUrls }),
     });
+  }
 
-    if (extract === "auto" && fallbackToAutoparse && (await isExtractDomainNotReady(response))) {
-      return this.queue.push({ url, config: { ...rest, autoparse: true, mode }, headers, clock });
-    }
+  /**
+   * Read the preparation status of `domain` (`GET /v1/extract/prepared-domains/{domain}`)
+   * and return the parsed status object. `status` is `"preparing"`, `"ready"` or `"failed"`;
+   * a failed preparation carries a `failure` with `code`, `detail` and `slot_consumed`.
+   *
+   * Rejects with a `TypeError` for an empty `domain`, before any request, and with
+   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 404 `not_found` when your
+   * account never submitted `domain`.
+   */
+  public async preparedDomainStatus(domain: string): Promise<PreparedDomainStatus> {
+    checkDomain(domain);
+    return preparedDomainsRequest(
+      `${API_URL}extract/prepared-domains/${encodeURIComponent(domain)}`,
+      { method: "GET", headers: this.preparedDomainsHeaders() },
+    );
+  }
 
-    return response;
+  private preparedDomainsHeaders(): Record<string, string> {
+    return { "X-API-Key": this.apiKey, "User-Agent": `zenrows/${packageJson.version} node` };
   }
 
   public post(
@@ -250,14 +299,12 @@ export class ZenRows {
     config,
     headers,
     data,
-    clock = {},
   }: {
     url: string;
     method?: HttpMethods;
     config?: ZenRowsConfig;
     headers: Headers;
     data?: unknown;
-    clock?: CallClock;
   }): Promise<Response> {
     const params = new URLSearchParams({
       url,
@@ -296,12 +343,10 @@ export class ZenRows {
 
     // A request that is not safe to send twice (a POST without an Idempotency-Key) is sent once.
     const eligible = isRetryEligible(method, finalHeaders, fetchOptions.body);
-    clock.startedAt ??= Date.now();
     const { retryOn, retryDelay } = retryPolicy({
       retries: eligible ? this.clientConfig.retries ?? DEFAULT_RETRIES : 0,
       retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,
       retryBudget: this.clientConfig.retryBudget ?? DEFAULT_RETRY_BUDGET_SECONDS,
-      startedAt: clock.startedAt,
     });
     const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, {
       ...fetchOptions,
