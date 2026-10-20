@@ -1,7 +1,7 @@
 // Retry policy for `fetch()` and `extract()`. `post()` goes through it too, but is never retried.
 // The same policy ships in every ZenRows client: retry only answers that say "try again" and are
 // never charged, retry only requests that are safe to send twice, back off with full jitter, and
-// start no retry after the budget.
+// start no retry after the budget. A status the target site sent is never retried.
 
 /** Statuses retried: rate limited, or the gateway or its upstream could not answer. Never charged. */
 export const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 504]);
@@ -39,9 +39,43 @@ const BACKOFF_BASE_MS = 1000;
 const RETRY_AFTER_MIN_MS = 250;
 const RETRY_AFTER_MAX_MS = 30_000;
 
+/**
+ * The request params that make a status the target site's own answer, not the API's. The client
+ * reads them in the form it sends them: `String(value)`, so an array goes out comma-separated.
+ */
+export interface TargetStatusParams {
+  /** When on (`true`, `"true"`, `1` or `"1"`), the API returns the target's status: none is retried. */
+  original_status?: unknown;
+  /** Statuses, comma-separated or as an array, that the API passes through from the target. */
+  allowed_status_codes?: unknown;
+}
+
+/**
+ * Builds the test for "this status came from the target site", from the request params. A
+ * status from the target is never retried: another try asks the same site the same question.
+ */
+export function targetStatusRule(params: TargetStatusParams = {}): (status: number) => boolean {
+  const originalStatus = params.original_status;
+  if (originalStatus !== undefined && originalStatus !== null) {
+    const wire = String(originalStatus).trim().toLowerCase();
+    if (wire === "true" || wire === "1") return () => true;
+  }
+  const allowed = new Set<number>();
+  const listed = params.allowed_status_codes;
+  if (listed !== undefined && listed !== null) {
+    for (const part of String(listed).split(",")) {
+      const code = part.trim();
+      if (/^\d+$/.test(code)) allowed.add(Number(code));
+    }
+  }
+  return (status) => allowed.has(status);
+}
+
 export interface RetryPolicyOptions {
   /** Retries after the first try. 0 turns retries off. */
   retries: number;
+  /** The request params `original_status` and `allowed_status_codes` (see `targetStatusRule`). */
+  params?: TargetStatusParams;
   /** The longest one jitter wait may be, in seconds. It never caps a `Retry-After`. */
   retryMaxWait: number;
   /** No retry starts once the time spent plus the next wait would pass this, in seconds. */
@@ -143,6 +177,7 @@ export function retryPolicy(options: RetryPolicyOptions) {
   const random = options.random ?? Math.random;
   const maxWaitMs = options.retryMaxWait * 1000;
   const budgetMs = options.retryBudget * 1000;
+  const isTargetStatus = targetStatusRule(options.params);
   const startedAt = now();
   let nextDelayMs = 0;
 
@@ -155,7 +190,11 @@ export function retryPolicy(options: RetryPolicyOptions) {
       if (attempt >= options.retries) return false;
       if (error) {
         if (!isPreSendFailure(error)) return false;
-      } else if (!response || !(await isRetryableResponse(response))) {
+      } else if (
+        !response ||
+        isTargetStatus(response.status) ||
+        !(await isRetryableResponse(response))
+      ) {
         return false;
       }
 

@@ -77,7 +77,9 @@ interface ClientConfig {
    * `no_data_extracted`, or a failure before the request reached the server. An integer of 0 or
    * more; default 2; 0 turns retries off. A reset after the request was sent, a timeout or an
    * abort is never retried: the server may still finish the request and charge it. `post()` is
-   * never retried, whatever its headers: the API does not dedupe on `Idempotency-Key`.
+   * never retried, whatever its headers: the API does not dedupe on `Idempotency-Key`. No status
+   * is retried when the request sets `original_status`, and no status listed in
+   * `allowed_status_codes` is: that status comes from the target site.
    */
   retries?: number;
   /** The longest one random wait may be, in seconds (greater than 0). Default 30. It never caps a `Retry-After`. */
@@ -345,6 +347,8 @@ export class ZenRows {
     const eligible = isRetryEligible(method, fetchOptions.body);
     const { retryOn, retryDelay } = retryPolicy({
       retries: eligible ? this.clientConfig.retries ?? DEFAULT_RETRIES : 0,
+      // A status the target site sent (original_status, allowed_status_codes) is not retried.
+      params: config,
       retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,
       retryBudget: this.clientConfig.retryBudget ?? DEFAULT_RETRY_BUDGET_SECONDS,
     });

@@ -158,6 +158,58 @@ describe("conformance vectors", () => {
   });
 });
 
+describe("a status from the target site is not retried", () => {
+  const retriedCodes = [429, 502, 503, 504, 422];
+
+  test.each([true, "true", "TRUE", " true ", 1, "1"])(
+    "original_status %j: no status is retried",
+    async (on) => {
+      for (const code of retriedCodes) {
+        const policy = policyAt({ ms: 0 }, { params: { original_status: on } });
+        expect(await policy.retryOn(0, null, status(code))).toBe(false);
+      }
+    },
+  );
+
+  test.each([false, "false", 0, "0", "", null, undefined])(
+    "original_status %j: the usual statuses are retried",
+    async (off) => {
+      for (const code of retriedCodes) {
+        const policy = policyAt({ ms: 0 }, { params: { original_status: off } });
+        expect(await policy.retryOn(0, null, status(code))).toBe(true);
+      }
+    },
+  );
+
+  test.each([
+    ["the string '503'", "503"],
+    ["a list with spaces", "404, 503"],
+    ["an array of strings", ["404", "503"]],
+    ["an array of numbers", [404, 503]],
+    ["a number", 503],
+  ])("allowed_status_codes as %s: a 503 is final, a 502 is retried", async (_label, listed) => {
+    const params = { allowed_status_codes: listed };
+    expect(await policyAt({ ms: 0 }, { params }).retryOn(0, null, status(503))).toBe(false);
+    expect(await policyAt({ ms: 0 }, { params }).retryOn(0, null, status(502))).toBe(true);
+  });
+
+  test("allowed_status_codes '422,429': a listed 422 or 429 is final", async () => {
+    const params = { allowed_status_codes: "422,429" };
+    const other = Response.json({ code: "RESP001" }, { status: 422 });
+    expect(await policyAt({ ms: 0 }, { params }).retryOn(0, null, other)).toBe(false);
+    expect(await policyAt({ ms: 0 }, { params }).retryOn(0, null, status(429))).toBe(false);
+    expect(await policyAt({ ms: 0 }, { params }).retryOn(0, null, status(503))).toBe(true);
+  });
+
+  test.each([
+    ["original_status", { original_status: true }],
+    ["allowed_status_codes", { allowed_status_codes: "503" }],
+  ])("a refused connection is still retried with %s", async (_label, params) => {
+    const policy = policyAt({ ms: 0 }, { params });
+    expect(await policy.retryOn(0, fetchFailed("ECONNREFUSED"), null)).toBe(true);
+  });
+});
+
 describe("retryPolicy", () => {
   test("stops after `retries` retries", async () => {
     const policy = policyAt({ ms: 0 }, { retries: 2 });
@@ -394,6 +446,79 @@ describe("ZenRows client retries", () => {
 
     expect((await pending).status).toBe(code);
     expect(calls).toBe(4);
+  });
+
+  describe("a status from the target site", () => {
+    /** Answers every GET with `answer()` and records the query string of each request. */
+    function recordGets(answer: () => Response) {
+      const queries: URLSearchParams[] = [];
+      server.use(
+        http.get(apiUrl, ({ request }) => {
+          queries.push(new URL(request.url).searchParams);
+          return answer();
+        }),
+      );
+      return queries;
+    }
+
+    test.each(retriedAnswers)(
+      "fetch() with original_status: true is sent once on a %i",
+      async (code, answer) => {
+        const queries = recordGets(answer);
+
+        const pending = new ZenRows("API_KEY", { retries: 3 }).fetch(url, {
+          original_status: true,
+        });
+        await vi.advanceTimersByTimeAsync(60_000);
+
+        expect((await pending).status).toBe(code);
+        expect(queries).toHaveLength(1);
+        expect(queries[0]?.get("original_status")).toBe("true");
+      },
+    );
+
+    test.each([
+      ["false", { original_status: false }],
+      ["absent", {}],
+    ])("fetch() with original_status %s is retried on a 503", async (_label, config) => {
+      const queries = recordGets(() => new HttpResponse(null, { status: 503 }));
+
+      const pending = new ZenRows("API_KEY", { retries: 3 }).fetch(url, config);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect((await pending).status).toBe(503);
+      expect(queries).toHaveLength(4);
+    });
+
+    test("extract() with original_status: true is sent once on a 503", async () => {
+      const queries = recordGets(() => new HttpResponse(null, { status: 503 }));
+
+      const pending = new ZenRows("API_KEY", { retries: 3 }).extract(url, {
+        original_status: true,
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect((await pending).status).toBe(503);
+      expect(queries).toHaveLength(1);
+    });
+
+    test("allowed_status_codes '503': a 503 is sent once, a 502 is retried", async () => {
+      const client = new ZenRows("API_KEY", { retries: 3 });
+      const config = { allowed_status_codes: "503" };
+
+      const once = recordGets(() => new HttpResponse(null, { status: 503 }));
+      const first = client.fetch(url, config);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect((await first).status).toBe(503);
+      expect(once).toHaveLength(1);
+      expect(once[0]?.get("allowed_status_codes")).toBe("503");
+
+      const retried = recordGets(() => new HttpResponse(null, { status: 502 }));
+      const second = client.fetch(url, config);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect((await second).status).toBe(502);
+      expect(retried).toHaveLength(4);
+    });
   });
 });
 

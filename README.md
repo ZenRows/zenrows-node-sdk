@@ -147,6 +147,7 @@ What the client never retries:
 1. Any other status, `500` included.
 2. A connection reset or close after the request was sent, a response timeout, or an abort. The API may still finish that request and charge it.
 3. An error in the request itself, such as an invalid header value.
+4. Any status when you set `original_status`, and a status you list in `allowed_status_codes`. That status comes from the target site, not the API. A refused connection is still retried.
 
 Which calls the client retries:
 

@@ -115,6 +115,37 @@ describe("failures before the request was sent are retried", () => {
   });
 });
 
+describe("original_status: true", () => {
+  test("a refused connection is still retried", async () => {
+    fastRandom();
+    const calls = routeApiTo(await closedPortOrigin());
+
+    const error = await new ZenRows("API_KEY")
+      .fetch("https://example.com", { original_status: true })
+      .catch((e) => e);
+
+    expect(error.cause.code).toBe("ECONNREFUSED");
+    expect(calls.count).toBe(3);
+  });
+
+  test("a 503 from the server is sent once", async () => {
+    fastRandom();
+    const server = await startServer((_req, res) => {
+      res.writeHead(503);
+      res.end();
+    });
+    routeApiTo(server.origin);
+
+    const response = await new ZenRows("API_KEY").fetch("https://example.com", {
+      original_status: true,
+    });
+    await server.close();
+
+    expect(response.status).toBe(503);
+    expect(server.requests).toEqual(["GET"]);
+  });
+});
+
 describe("post() is sent once, even on a refused connection", () => {
   test.each([
     ["without an Idempotency-Key", {}],
