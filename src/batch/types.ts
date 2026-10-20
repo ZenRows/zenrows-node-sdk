@@ -10,10 +10,19 @@ export type JobType = "regular" | "scheduled";
 export type JobStatus = "open" | "closed" | "deleted";
 export type ScheduleState = "active" | "paused";
 export type RunStatus = "pending" | "running" | "completed" | "failed" | "stopped" | "deleted";
-export type TaskStatus = "pending" | "processing" | "successful" | "failed";
+/**
+ * `expired`: a successful task whose result is past the retention window (14 days by
+ * default). The row has no `result_url`, and its content endpoint answers 410
+ * `result_expired`. A `status: "successful"` filter still matches expired rows.
+ */
+export type TaskStatus = "pending" | "processing" | "successful" | "failed" | "expired";
 export type PauseState = "active" | "paused";
 export type IngestStatus = "pending" | "done";
 export type ExportStatus = "pending" | "running" | "completed" | "failed";
+/** What started a run: `manual` (a submit or rerun through the API) or `scheduled` (a schedule fired). */
+export type RunTrigger = "manual" | "scheduled";
+/** HTTP method a task fetches its URL with. `GET` is the default. */
+export type TaskMethod = "GET" | "POST";
 /**
  * Why a run auto-failed (`status == "failed"`).
  * - `insufficient_credits` — the account is out of credits.
@@ -31,6 +40,7 @@ export interface Spend {
   cost: number;
 }
 
+/** @deprecated Results listings never return per-task spend; see `TaskHistoryEvent.spend`. */
 export interface TaskSpend {
   total: Spend;
   last_attempt: Spend;
@@ -65,6 +75,8 @@ export interface Run {
   job_id: string;
   run_sequence: number;
   status: Extensible<RunStatus>;
+  /** What started this run. */
+  trigger?: Extensible<RunTrigger>;
   stats: RunStats;
   last_batch_received?: boolean;
   pause_state?: PauseState;
@@ -142,12 +154,20 @@ export interface TaskResult {
   run_id: string;
   url: string;
   metadata?: Record<string, string>;
-  method?: "GET" | "POST";
+  method?: TaskMethod;
   status: Extensible<TaskStatus>;
   type?: string;
   result_url?: string;
   error?: ProblemJson;
   source_run_id?: string;
+  /** When the task row was created (RFC 3339). */
+  created_at?: string;
+  /** When the task row last changed, for example when an attempt settled (RFC 3339). */
+  updated_at?: string;
+  /**
+   * @deprecated Never set: results listings do not return per-task spend. Read per-attempt
+   * spend from `getTaskHistory()`, or the run total from `run.stats.spend`.
+   */
   spend?: TaskSpend;
 }
 
@@ -224,4 +244,31 @@ export interface TestWebhookResponse {
   status_code?: number;
   error?: string;
   elapsed_ms: number;
+}
+
+/** Event types a Batch webhook delivers. `webhook.test` comes only from `testWebhook()`. */
+export type WebhookEventType = "run.completed" | "run.failed" | "webhook.test";
+
+/**
+ * The JSON body of a Batch webhook delivery (`schema: "zenrows.webhook/v1"`). Verify the
+ * raw body with `verifyWebhookSignature()` before parsing it, and deduplicate deliveries on
+ * `event_id` (also sent as the `X-ZenRows-Event-Id` header): a delivery can repeat.
+ */
+export interface WebhookEvent {
+  schema: Extensible<"zenrows.webhook/v1">;
+  event_id: string;
+  event_type: Extensible<WebhookEventType>;
+  /** When the event was queued (RFC 3339). */
+  occurred_at: string;
+  job_id: string;
+  external_id?: string;
+  metadata?: Record<string, string>;
+  run_id: string;
+  run_sequence: number;
+  /** The run's counters when the event was queued. */
+  stats?: RunStats;
+  /** Set on `run.failed` only. */
+  failure_reason?: Extensible<RunFailureReason>;
+  /** Set on `run.failed` only. */
+  failure_detail?: string;
 }

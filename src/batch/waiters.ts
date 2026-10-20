@@ -1,3 +1,5 @@
+import type { Run } from "./types.js";
+
 /** Raised when a waiter's `timeout` elapsed before the target state was reached. */
 export class WaiterTimeoutError extends Error {
   constructor(message: string) {
@@ -11,6 +13,21 @@ export class WaiterFailureError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "WaiterFailureError";
+  }
+}
+
+/**
+ * Raised by a run waiter when the run is paused (`pause_state: "paused"`) and not yet in a
+ * target status. A paused run makes no progress until it is resumed, so the waiter stops
+ * instead of polling until its timeout. `run` is the run as last read.
+ */
+export class RunPausedError extends Error {
+  readonly run: Run;
+
+  constructor(run: Run) {
+    super(`waiter: run ${run.run_id} is paused; resume it with job.run.resume() and wait again`);
+    this.name = "RunPausedError";
+    this.run = run;
   }
 }
 
