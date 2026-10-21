@@ -231,9 +231,11 @@ The legacy `402` with `code: "AUTH010"` means the domain isn't enabled. `extract
 
 #### Preparing a domain
 
-`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs, one per kind of page you want to extract. These calls cost no credits.
+`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs on that domain. These calls cost no credits.
 
-Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`:
+One example URL works, but several related URLs work better: send several pages of each page type you want to extract, at least 3 when you can. Several page types can share the 5, for example 3 product pages and 2 search-result pages. Extract compares the pages of one type against each other, so it can check the fields it found and fill in fields that one page is missing. More pages of a type give more complete, more reliable results for that type.
+
+Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`. This example prepares one page type, product pages, with 3 of them:
 
 ```javascript
 import { ZenRows, ZenRowsPreparedDomainError } from "zenrows";
@@ -242,7 +244,9 @@ const client = new ZenRows("YOUR-API-KEY");
 
 try {
   let status = await client.prepareDomain("www.scrapingcourse.com", [
-    "https://www.scrapingcourse.com/ecommerce/",
+    "https://www.scrapingcourse.com/ecommerce/product/abominable-hoodie/",
+    "https://www.scrapingcourse.com/ecommerce/product/adrienne-trek-jacket/",
+    "https://www.scrapingcourse.com/ecommerce/product/aeon-capri/",
   ]);
   while (status.status === "preparing") {
     await new Promise((resolve) => setTimeout(resolve, 30_000));
