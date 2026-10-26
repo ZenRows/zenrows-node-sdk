@@ -233,9 +233,9 @@ The legacy `402` with `code: "AUTH010"` means the domain isn't enabled. `extract
 
 `client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs on that domain. These calls cost no credits.
 
-One example URL works, but several related URLs work better: send several pages of each page type you want to extract, at least 3 when you can. Several page types can share the 5, for example 3 product pages and 2 search-result pages. Extract compares the pages of one type against each other, so it can check the fields it found and fill in fields that one page is missing. More pages of a type give more complete, more reliable results for that type.
+One example URL works; we recommend 3 or more of the same page type (e.g. 3 product pages), because Extract compares pages of one type to check the fields it found and fill in fields one page is missing. Several page types can share the 5 (e.g. 3 product pages + 2 search-result pages).
 
-Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`. This example prepares one page type, product pages, with 3 of them:
+Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`. This example prepares three product pages:
 
 ```javascript
 import { ZenRows, ZenRowsPreparedDomainError } from "zenrows";
