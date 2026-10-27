@@ -231,9 +231,11 @@ The legacy `402` with `code: "AUTH010"` means the domain isn't enabled. `extract
 
 #### Preparing a domain
 
-`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs, one per kind of page you want to extract. These calls cost no credits.
+`client.prepareDomain(domain, exampleUrls)` submits a domain for Extract (`POST /v1/extract/prepared-domains`), and `client.preparedDomainStatus(domain)` reads where it is (`GET /v1/extract/prepared-domains/{domain}`). Both resolve to the parsed status object. Pass the domain without a scheme and 1 to 5 example URLs on that domain. These calls cost no credits.
 
-Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`:
+One example URL works; we recommend 3 or more of the same page type (e.g. 3 product pages), because Extract compares pages of one type to check the fields it found and fill in fields one page is missing. Several page types can share the 5 (e.g. 3 product pages + 2 search-result pages).
+
+Preparation takes minutes, and the client does not wait for it. Poll the status until it is no longer `"preparing"`. This example prepares three product pages:
 
 ```javascript
 import { ZenRows, ZenRowsPreparedDomainError } from "zenrows";
@@ -242,7 +244,9 @@ const client = new ZenRows("YOUR-API-KEY");
 
 try {
   let status = await client.prepareDomain("www.scrapingcourse.com", [
-    "https://www.scrapingcourse.com/ecommerce/",
+    "https://www.scrapingcourse.com/ecommerce/product/abominable-hoodie/",
+    "https://www.scrapingcourse.com/ecommerce/product/adrienne-trek-jacket/",
+    "https://www.scrapingcourse.com/ecommerce/product/aeon-capri/",
   ]);
   while (status.status === "preparing") {
     await new Promise((resolve) => setTimeout(resolve, 30_000));

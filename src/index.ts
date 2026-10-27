@@ -230,9 +230,12 @@ export class ZenRows {
    * the parsed status object the API answers with `202`: `domain`, `status` (`"preparing"`,
    * `"ready"` or `"failed"`), `state`, `submitted_at`, `updated_at`.
    *
-   * `domain` is the domain without a scheme. `exampleUrls` are 1 to 5 URLs on that domain,
-   * one per kind of page you want to extract. Submitting a domain that is already prepared
-   * returns its current status instead of starting a new run.
+   * `domain` is the domain without a scheme. `exampleUrls` are 1 to 5 example URLs on that
+   * domain. One works; we recommend 3 or more of the same page type (e.g. 3 product pages),
+   * because Extract compares pages of one type to check the fields it found and fill in fields
+   * one page is missing. Several page types can share the 5 (e.g. 3 product pages + 2
+   * search-result pages). Submitting a domain that is already prepared returns its current
+   * status instead of starting a new run.
    *
    * Preparation takes minutes. This method does not wait for it: call
    * `preparedDomainStatus(domain)` until `status` is no longer `"preparing"`. These endpoints
