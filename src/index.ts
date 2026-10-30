@@ -8,6 +8,14 @@ import {
   checkDomain,
   preparedDomainsRequest,
 } from "./extract/prepared-domains.js";
+import {
+  DEFAULT_RETRIES,
+  DEFAULT_RETRY_BUDGET_SECONDS,
+  DEFAULT_RETRY_MAX_WAIT_SECONDS,
+  isRetryEligible,
+  retryPolicy,
+  validateRetryOptions,
+} from "./retry.js";
 
 export * from "./batch/client.js";
 export * from "./batch/errors.js";
@@ -24,6 +32,7 @@ export {
   type PreparedDomainStatus,
   ZenRowsPreparedDomainError,
 } from "./extract/prepared-domains.js";
+export { isNoDataExtracted } from "./retry.js";
 
 const API_URL = "https://api.zenrows.com/v1/";
 
@@ -61,23 +70,22 @@ function warnFallbackDeprecated(): void {
   );
 }
 
-/** True when a response is Extract's 422 `no_data_extracted`: Extract knows this kind
- * of page but found no data on it. The request is not charged and the client never
- * retries it, since another try returns the same answer. Reads via `.clone()`, so the
- * original response body is left unconsumed for the caller. */
-export async function isNoDataExtracted(response: Response): Promise<boolean> {
-  if (response.status !== 422) return false;
-  try {
-    const body = (await response.clone().json()) as { code?: unknown };
-    return typeof body?.code === "string" && body.code.toLowerCase() === "no_data_extracted";
-  } catch {
-    return false;
-  }
-}
-
 interface ClientConfig {
   concurrency?: number;
+  /**
+   * Retries for `fetch()` and `extract()` after a 429, 502, 503 or 504, a 422 other than
+   * `no_data_extracted`, or a failure before the request reached the server. An integer of 0 or
+   * more; default 2; 0 turns retries off. A reset after the request was sent, a timeout or an
+   * abort is never retried: the server may still finish the request and charge it. `post()` is
+   * never retried, whatever its headers: the API does not dedupe on `Idempotency-Key`. No status
+   * is retried when the request sets `original_status`, and no status listed in
+   * `allowed_status_codes` is: that status comes from the target site.
+   */
   retries?: number;
+  /** The longest one random wait may be, in seconds (greater than 0). Default 30. It never caps a `Retry-After`. */
+  retryMaxWait?: number;
+  /** No retry starts after this many seconds since the first try started (greater than 0). Default 90. */
+  retryBudget?: number;
   /** Config for `client.crawl`: its own `baseURL`, `retries` and `timeout`. */
   crawl?: CrawlClientConfig;
 }
@@ -119,35 +127,16 @@ export class ZenRows {
   readonly crawl: ZenRowsCrawlClient;
 
   constructor(apiKey: string, clientConfig: ClientConfig = {}) {
+    validateRetryOptions(clientConfig);
     this.apiKey = apiKey;
     this.clientConfig = clientConfig;
     this.batch = new ZenRowsBatchClient(apiKey);
     this.crawl = new ZenRowsCrawlClient(apiKey, clientConfig.crawl);
-    const retries = this.clientConfig.retries ?? 0;
 
     this.queue = fastq.promise(this, this.worker, this.clientConfig.concurrency ?? 5);
 
-    this.fetchWithRetry = fetchRetry(fetch, {
-      retryDelay: (attempt) => 2 ** attempt * 1000,
-      // retryOn: [422, 503, 504],
-      retryOn: async (attempt, error, response) => {
-        if (attempt >= retries) {
-          return false;
-        }
-
-        if (error !== null || response?.status === 503 || response?.status === 504) {
-          return true;
-        }
-
-        // A 422 is usually a failure to get the target's content and worth another
-        // try, except Extract's `no_data_extracted`, which is a final answer.
-        if (response?.status === 422) {
-          return !(await isNoDataExtracted(response));
-        }
-
-        return false;
-      },
-    });
+    // The retry policy is per request (see `worker`), so this only wraps fetch.
+    this.fetchWithRetry = fetchRetry(fetch);
   }
 
   /**
@@ -357,7 +346,20 @@ export class ZenRows {
       }
     }
 
-    const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, fetchOptions);
+    // A POST, or a body that cannot be sent again, goes out once: it is not safe to send twice.
+    const eligible = isRetryEligible(method, fetchOptions.body);
+    const { retryOn, retryDelay } = retryPolicy({
+      retries: eligible ? this.clientConfig.retries ?? DEFAULT_RETRIES : 0,
+      // A status the target site sent (original_status, allowed_status_codes) is not retried.
+      params: config,
+      retryMaxWait: this.clientConfig.retryMaxWait ?? DEFAULT_RETRY_MAX_WAIT_SECONDS,
+      retryBudget: this.clientConfig.retryBudget ?? DEFAULT_RETRY_BUDGET_SECONDS,
+    });
+    const response = await this.fetchWithRetry(`${API_URL}?${params.toString()}`, {
+      ...fetchOptions,
+      retryOn,
+      retryDelay,
+    });
 
     return response;
   }
