@@ -9,8 +9,11 @@ import type {
   CrawlOutputFormat,
   CrawlResult,
   CrawlStop,
+  CrawlWebhookEventType,
   CrawlWithResults,
 } from "./types.js";
+
+export * from "./webhook.js";
 
 const DEFAULT_CRAWL_API_URL = "https://api.zenrows.com/v1";
 const DEFAULT_TIMEOUT_SECONDS = 30;
@@ -36,6 +39,19 @@ export interface CrawlClientConfig {
   retries?: number;
   /** Seconds each HTTP request may take. Default 30. Does not limit reading a `download()` body. */
   timeout?: number;
+}
+
+/** Where to send a crawl's events, and which ones. */
+export interface CrawlWebhookParams {
+  /** The absolute `https` URL each event is posted to, up to 2,048 characters. Its host must resolve. */
+  url: string;
+  /** The events to send, each named once, in any order. Omit it for all four. */
+  events?: CrawlWebhookEventType[];
+  /**
+   * Sent back with every event, to match it to your own records. Up to 20 keys, each 1 to 64
+   * characters; each value any JSON, at most 1,024 bytes as compact JSON.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface CreateCrawlParams {
@@ -64,6 +80,14 @@ export interface CreateCrawlParams {
    * links in the page's HTML, and is what a crawl runs with when you leave this out.
    */
   discovery?: CrawlDiscoveryStrategy[];
+  /**
+   * Get notified when the crawl starts, completes, stops or fails: each event is POSTed to
+   * `webhook.url` as a `CrawlWebhookEvent`, signed with the account's webhook signing key
+   * (create it in the dashboard). Check it with `verifyCrawlWebhookSignature()`. A failed
+   * delivery is retried for up to 3 days. The account needs a signing key, or the create throws a 422
+   * `webhook_signing_key_required`; a bad `url`, `events` or `metadata` is a 422 `invalid_webhook`.
+   */
+  webhook?: CrawlWebhookParams;
 }
 
 export interface WaitForCrawlOptions {
@@ -145,6 +169,7 @@ export class ZenRowsCrawlClient {
       exclude_patterns: params.excludePatterns,
       output_format: params.outputFormat,
       discovery: params.discovery,
+      webhook: params.webhook,
     };
     return this.transport.requestJson("POST", "/crawls", {
       body,

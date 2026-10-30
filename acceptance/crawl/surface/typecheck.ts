@@ -5,6 +5,7 @@ import {
   type CrawlList,
   type CrawlResult,
   type CrawlStop,
+  type CrawlWebhook,
   type CrawlWithResults,
   type CreateCrawlParams,
   ZenRows,
@@ -27,11 +28,13 @@ export async function main(): Promise<void> {
     maxPages: 10,
     includePatterns: ["/p/"],
     outputFormat: "html",
+    webhook: { url: "https://example.com/hook", events: ["crawl.completed"], metadata: { k: "v" } },
   };
   const c: Crawl = await client.crawl.create(params, { idempotencyKey: "k" });
   // depth is optional: left out, the crawl has no depth limit and the response omits it.
   const unbounded: Crawl = await client.crawl.create({ url: "https://example.com/" });
   const depth: number | undefined = unbounded.depth;
+  const hook: CrawlWebhook | null | undefined = c.webhook;
   const w: Crawl = await standalone.wait(c.crawl_id, { timeout: 1 });
   const g: CrawlWithResults = await client.crawl.get(w.crawl_id, { limit: 2 });
   const next: string | null = g.next_cursor;
@@ -54,5 +57,5 @@ export async function main(): Promise<void> {
       console.log(code, status);
     }
   }
-  console.log(next, listNext, s.status, depth);
+  console.log(next, listNext, s.status, depth, hook?.events);
 }

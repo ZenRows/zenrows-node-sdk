@@ -29,6 +29,16 @@ export type CrawlContentStatus = "pending" | "fetched" | "failed";
 export type CrawlOutputFormat = "html" | "markdown";
 /** How a crawl finds the URLs it follows on each page it walks. */
 export type CrawlDiscoveryStrategy = "links";
+/**
+ * The events a crawl's webhook can be sent. `crawl.started`: the crawl was created and runs.
+ * `crawl.completed`, `crawl.stopped`, `crawl.failed`: the crawl reached that `status`; exactly
+ * one of these three is sent per crawl.
+ */
+export type CrawlWebhookEventType =
+  | "crawl.started"
+  | "crawl.completed"
+  | "crawl.stopped"
+  | "crawl.failed";
 
 export interface CrawlCoverage {
   pages_fetched: number;
@@ -44,6 +54,43 @@ export interface CrawlCoverage {
 export interface CrawlRunError {
   code: Extensible<CrawlErrorCode>;
   detail: string;
+}
+
+/**
+ * The webhook a crawl sends its events to, as the crawl runs with it. Fixed at create: there is
+ * no update.
+ */
+export interface CrawlWebhook {
+  url: string;
+  /** The events the crawl sends: the ones the create asked for, or all four when it left them out. */
+  events: Extensible<CrawlWebhookEventType>[];
+  /** Sent back with every event. Null or absent when the create set none. */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * The JSON body of one crawl event (`schema: "zenrows.webhook/v1"`). Verify the raw body with
+ * `verifyCrawlWebhookSignature()` before parsing it. Every delivery of one event carries the same
+ * `event_id` (also sent as the `X-ZenRows-Event-Id` header): drop one you have already handled.
+ * Events can arrive out of order, so a short crawl's end can come before its `crawl.started`:
+ * order them by `occurred_at`, or read the crawl with `get()`.
+ */
+export interface CrawlWebhookEvent {
+  schema: Extensible<"zenrows.webhook/v1">;
+  /** E.g. `ev_01M5AKXYZ_completed`: the crawl's id without its `c_`, and the event's last part. */
+  event_id: string;
+  event_type: Extensible<CrawlWebhookEventType>;
+  /** When the crawl was created, for `crawl.started`; its `finished_at`, for the others. */
+  occurred_at: string;
+  resource: {
+    type: Extensible<"crawl">;
+    /** The crawl's `crawl_id`. */
+    id: string;
+    /** The crawl on the API. */
+    url?: string;
+  };
+  /** The webhook's `metadata`. Absent when the crawl has none. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface Crawl {
@@ -66,6 +113,8 @@ export interface Crawl {
    * Absent when the server does not send the field.
    */
   discovery?: Extensible<CrawlDiscoveryStrategy>[];
+  /** Where the crawl sends its events. Absent (or null) on a crawl created without a webhook. */
+  webhook?: CrawlWebhook | null;
   duplicates_removed?: number;
   /** Absent while the crawl runs. */
   finished_at?: string;
