@@ -667,6 +667,32 @@ await liveCheck(
     };
   },
 );
+await liveCheck(
+  "24",
+  "Webhook",
+  "create({ webhook }) returns the crawl with that webhook: its url, events and metadata",
+  async () => {
+    const webhook = {
+      url: "https://example.com/zenrows-hook",
+      events: ["crawl.completed"],
+      metadata: { k: "v" },
+    };
+    const r = await errOf(create({ url: CRAWL_URL, depth: 1, maxPages: 1, webhook }));
+    if (r.error)
+      return { status: FAIL, actual: JSON.stringify(errSummary(r.error)), evidence: r.error.stack };
+    await client.stop(r.value.crawl_id);
+    const got = r.value.webhook;
+    const ok =
+      got?.url === webhook.url &&
+      JSON.stringify(got.events) === JSON.stringify(webhook.events) &&
+      JSON.stringify(got.metadata) === JSON.stringify(webhook.metadata);
+    return {
+      status: passIf(ok),
+      actual: `${r.value.crawl_id}: webhook ${JSON.stringify(got ?? null)}`,
+      evidence: JSON.stringify(r.value),
+    };
+  },
+);
 await check("15", "Bad key", "any call with the key `invalid` → 401", async () => {
   const bad = new ZenRowsCrawlClient("invalid", { baseURL: API_BASE, retries: 0 });
   const r = await errOf(bad.get("c_does_not_exist"));
@@ -761,6 +787,7 @@ H.naming({
     exclude_patterns: "excludePatterns",
     output_format: "outputFormat",
     discovery: "discovery",
+    webhook: "webhook",
     idempotency_key: "idempotencyKey",
     cursor: "cursor",
     limit: "limit",
