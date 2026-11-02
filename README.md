@@ -642,6 +642,23 @@ After each merge to `main`, release-please opens or updates the PR
 `chore: release X.Y.Z`. It sets the version in `package.json`. Do not change
 it by hand.
 
+The release PR also adds the release's entry to `CHANGELOG.md`, one line per
+`feat`, `fix`, `perf` or `revert`. When a change alters what existing callers
+see, end the PR body with an override block before you merge it. Each line
+becomes one changelog entry, and a `behaviour` line goes under "Behaviour
+Changes", at the top of the entry:
+
+```
+BEGIN_COMMIT_OVERRIDE
+feat(client): one line for the feature
+
+behaviour(client): one line for what changes for callers
+END_COMMIT_OVERRIDE
+```
+
+A `behaviour` line does not set the version: the `feat` or `fix` line next to
+it does. On its own, it still opens a patch release.
+
 To release, merge that PR. The workflow runs the checks, creates the tag
 `vX.Y.Z` and the GitHub release, and publishes to npm.
 
