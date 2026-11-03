@@ -13,6 +13,7 @@ SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zen
 
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Retries](#retries)
   - [Adaptive Stealth Mode](#adaptive-stealth-mode)
   - [POST Requests](#post-requests)
   - [Extract](#extract)
@@ -49,7 +50,7 @@ Start using the API by [creating your API Key](https://app.zenrows.com/register?
 
 The SDK uses the official [fetch api](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html) for HTTP requests. The client's response will be a [`Response`](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html#response).
 
-It also uses [fetch-retry](https://github.com/jonbern/fetch-retry) to automatically retry failed requests (network errors and status codes 422, 503 and 504, except Extract's `422 no_data_extracted`). Retries are not active by default; you need to specify the number of retries, as shown below. It already includes an exponential back-off retry delay between failed requests.
+Retries are off by default: the client sends each request once. Set `retries` to turn them on, as shown below. See [Retries](#retries).
 
 > `client.fetch()` is the primary method for the main page-scraping product. `client.get()` still works and is kept as a deprecated alias — new code should call `fetch()`.
 
@@ -131,6 +132,31 @@ You can also pass optional parameters and headers; the list above is a reference
 
 Sending headers to the target URL will overwrite our defaults. Be careful when doing it and contact us if there is any problem.
 
+### Retries
+
+Retries are off by default: every request is sent once. Set `retries` to retry `fetch()`, `get()` and `extract()` up to that many times:
+
+```javascript
+const client = new ZenRows(apiKey, { retries: 3 });
+```
+
+The client retries:
+
+1. A `429`, `502`, `503` or `504`.
+2. A `422`, except one with `code: "no_data_extracted"` (see [Extract](#extract)).
+3. A connection that failed before the request was sent: refused, a name that does not resolve, an unreachable network or host, or a connect timeout.
+
+The client never retries:
+
+1. `post()`, whatever its headers. If you need it, write that retry yourself.
+2. Any other status, `500` included.
+3. A network error after the request was sent, a response timeout or an abort: the API may still run and charge that request.
+4. A status from the target site: any status when you set `original_status`, and a status you list in `allowed_status_codes`.
+
+Between tries the client waits the `Retry-After` the API sends, in whole seconds, from 0.25 to 30 seconds. Without one, it waits a random time from 0.25 seconds up to 1, 2, 4, ... seconds for the first, second, third retry, and at most `retryMaxWait` (default 30). No retry starts once the time since the first try plus the next wait would pass `retryBudget` (default 90 seconds). An invalid `retryMaxWait` or `retryBudget` throws a `RangeError`. `client.batch`, `client.crawl`, `prepareDomain()` and `preparedDomainStatus()` keep their own rules.
+
+If you already set `retries`: `429` and `502` are now retried, and a `422` and a connect timeout still are. `post()`, a network error after sending, a response timeout, an abort and target-site statuses are no longer retried. Waits follow `Retry-After` or the random wait above instead of a fixed 1, 2, 4 seconds, within the 90-second budget. `NaN`, `Infinity` or another value that is not a number now turns retries off with a warning; before, it retried without limit.
+
 ### Adaptive Stealth Mode
 
 Set `mode: "auto"` to let Zenrows pick the request configuration for you — it starts with the cheapest viable setup and escalates to `js_render`/`premium_proxy` only when the target needs it, billing only for the configuration that succeeds.
@@ -152,7 +178,7 @@ const apiKey = "YOUR-API-KEY";
 const url = "https://httpbin.org/anything";
 
 (async () => {
-  const client = new ZenRows(apiKey, { retries: 1 });
+  const client = new ZenRows(apiKey);
 
   const response = await client.post(
     url,
