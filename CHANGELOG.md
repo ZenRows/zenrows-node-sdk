@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.0](https://github.com/ZenRows/zenrows-node-sdk/compare/v2.6.0...v2.7.0) (2026-11-06)
+
+
+### Behaviour Changes
+
+* **client:** with retries set, a 429 and a 502 are now retried; post(), errors after sending, response timeouts, aborts and target-site statuses no longer are; waits follow Retry-After or full jitter; NaN or Infinity turns retries off ([e229734](https://github.com/ZenRows/zenrows-node-sdk/commit/e22973452da5d4f4adfc33c34bed29b9125720d6))
+
+
+### Features
+
+* **client:** opt-in retries following the shared retry policy, with Retry-After, full jitter and a 90 s budget; still off by default ([e229734](https://github.com/ZenRows/zenrows-node-sdk/commit/e22973452da5d4f4adfc33c34bed29b9125720d6))
+
 ## [2.6.0](https://github.com/ZenRows/zenrows-node-sdk/compare/v2.5.0...v2.6.0) (2026-10-30)
 
 
