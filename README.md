@@ -7,7 +7,7 @@
 
 # Zenrows Node.js SDK
 
-SDK to access [Zenrows](https://www.zenrows.com/) API directly from Node.js. Zenrows handles proxies rotation, headless browsers, and CAPTCHAs for you.
+SDK to access [Zenrows](https://www.zenrows.com/?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) API directly from Node.js. Zenrows handles proxies rotation, headless browsers, and CAPTCHAs for you.
 
 ## Table of Contents
 
@@ -46,7 +46,7 @@ bun install zenrows
 
 ## Usage
 
-Start using the API by [creating your API Key](https://app.zenrows.com/register?p=free).
+Start using the API by [creating your API Key](https://app.zenrows.com/register?p=free&utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk).
 
 The SDK uses the official [fetch api](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html) for HTTP requests. The client's response will be a [`Response`](https://nodejs.org/dist/latest-v18.x/docs/api/globals.html#response).
 
@@ -128,7 +128,7 @@ const url = "https://www.zenrows.com/";
 })();
 ```
 
-You can also pass optional parameters and headers; the list above is a reference. For more info, check out [the documentation page](https://www.zenrows.com/documentation).
+You can also pass optional parameters and headers; the list above is a reference. For more info, check out [the documentation page](https://www.zenrows.com/documentation?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk).
 
 Sending headers to the target URL will overwrite our defaults. Be careful when doing it and contact us if there is any problem.
 
@@ -206,7 +206,7 @@ const url = "https://httpbin.org/anything";
 
 ### Extract
 
-[Extract](https://docs.zenrows.com/extract/introduction) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
+[Extract](https://docs.zenrows.com/extract/introduction?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) runs a page through Zenrows' AI-powered structured extraction instead of returning raw HTML. Use `client.extract()` — it's the same request as `fetch()`, with the `extract` param set for you (defaults to `"auto"`; pass `"native"` or `"standard"` for the other contracts).
 
 ```javascript
 const { ZenRows } = require("zenrows");
@@ -225,7 +225,7 @@ const url = "https://www.zenrows.com/";
 })();
 ```
 
-`extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
+`extract()` also sends [Adaptive Stealth Mode](https://docs.zenrows.com/fetch/features/adaptive-stealth-mode?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) (`mode: "auto"`) by default, except when you set `js_render` or `premium_proxy`: the API rejects either combined with Adaptive Stealth Mode, so your fixed configuration is sent as is. Pass `adaptiveStealth: false` to turn it off entirely.
 
 Extract works on any prepared domain (you can prepare one yourself with `POST /v1/extract/prepared-domains`). A `403` with `code: "REQS007"` means Extract can't extract this page. Check `reason` in the problem body when present; older responses may not carry it:
 
@@ -290,13 +290,13 @@ try {
 
 They don't go through the client's queue or its `retries`, and an empty `domain` rejects with a `TypeError` before any request.
 
-Both methods reject with `ZenRowsPreparedDomainError` on an error answer, with `status`, `code` (`invalid_argument`, `not_found`, `in_progress`, `out_of_allowance`, `overloaded`, `disabled`, ...), `detail`, `reason`, `retryAfter` and the whole `problem` body. See the [Extract endpoints docs](https://docs.zenrows.com/extract/endpoints) for every status and failure code.
+Both methods reject with `ZenRowsPreparedDomainError` on an error answer, with `status`, `code` (`invalid_argument`, `not_found`, `in_progress`, `out_of_allowance`, `overloaded`, `disabled`, ...), `detail`, `reason`, `retryAfter` and the whole `problem` body. See the [Extract endpoints docs](https://docs.zenrows.com/extract/endpoints?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) for every status and failure code.
 
-A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup).
+A `422` with `code: "no_data_extracted"` means Extract knows this kind of page but found no data on it. It isn't charged, and the client never retries it, even with `retries` set. `isNoDataExtracted(response)` tells you when you got one. See the [Extract docs](https://docs.zenrows.com/extract/setup?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk).
 
 ### Batch
 
-The [Batch API](https://docs.zenrows.com/batch/introduction) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either a one-shot batch where every task is known upfront (`submitRegular()`), or **open** (`submitOpen()`): it keeps accepting tasks via `addTasks()` until you close it, which is useful when you're streaming URLs in over time. Batch costs the same credits as the regular API.
+The [Batch API](https://docs.zenrows.com/batch/introduction?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) runs many URLs asynchronously as a job, and is reachable via `client.batch`. A job is either a one-shot batch where every task is known upfront (`submitRegular()`), or **open** (`submitOpen()`): it keeps accepting tasks via `addTasks()` until you close it, which is useful when you're streaming URLs in over time. Batch costs the same credits as the regular API.
 
 `submitRegular()`, `submitOpen()` and `submitScheduled()` return a `JobRef`. Work with the job through it: `job.addTasks()`, `job.close()`, `job.rerun()`, `job.retryFailed()`, `job.delete()`, and the current run under `job.run` (`wait()`, `results()`, `downloadToDir()`, `stop()`, `pause()`, `resume()`).
 
@@ -493,7 +493,7 @@ console.log(batch.apiKey.length > 0);
 
 ### Crawl
 
-[Crawl](https://docs.zenrows.com/crawl/introduction) (new) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops; without `depth` it has no depth limit and follows links until `maxPages` or `maxItems` stops it (each defaults to 100), or no link is left to open. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
+[Crawl](https://docs.zenrows.com/crawl/introduction?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) (new) takes one start URL and returns the URLs behind it, and is reachable via `client.crawl`. It follows the links on each page up to `depth` hops; without `depth` it has no depth limit and follows links until `maxPages` or `maxItems` stops it (each defaults to 100), or no link is left to open. A crawl stays on the start URL's registrable domain; subdomains count. A crawl runs asynchronously: `create()` returns at once, `wait()` polls until it ends, and `results()` reads the URLs it kept. With `outputFormat: "html"` it also fetches each kept page, which you read with `content()` or all at once with `download()`.
 
 Crawl is still evolving: new features are coming, limits may be tuned, and the changelog announces each change.
 
@@ -566,7 +566,7 @@ const client = new ZenRows(apiKey, { crawl: options }); // client.crawl uses the
 
 ### Concurrency
 
-To limit the concurrency, it uses [fastq](https://github.com/mcollina/fastq), which will simultaneously send a maximum of requests. The concurrency is determined by the plan you are in, so take a look at the [pricing](https://www.zenrows.com/pricing) and set it accordingly. Take into account that each client instance will have its own limit, meaning that two different scripts will not share it, and 429 (Too Many Requests) errors might arise.
+To limit the concurrency, it uses [fastq](https://github.com/mcollina/fastq), which will simultaneously send a maximum of requests. The concurrency is determined by the plan you are in, so take a look at the [pricing](https://www.zenrows.com/pricing?utm_source=github&utm_medium=readme&utm_campaign=zenrows-node-sdk) and set it accordingly. Take into account that each client instance will have its own limit, meaning that two different scripts will not share it, and 429 (Too Many Requests) errors might arise.
 
 We use [`Promise.allSettled()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled) in the example below, available from Node 12.9. It will wait for all the promises to finish, and the results are objects with a status marking them as fulfilled or rejected. The main difference with `Promise.all()` is that it won't fail if any requests fail. It might make your scraping more robust since the whole list of URLs will run, even if some of them fail.
 
