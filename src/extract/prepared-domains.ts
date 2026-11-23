@@ -18,6 +18,14 @@ export interface PreparedDomainStatus {
 /** An RFC 9457 problem from the prepared-domains endpoints, which may carry a `reason`. */
 export interface PreparedDomainProblem extends ProblemJson {
   reason?: string;
+  /** With `domain_rejection_limit`: the domain that reached its limit. */
+  domain?: string;
+  /** With `domain_rejection_limit`: rejected preparations of the domain this month. */
+  rejected?: number;
+  /** With a 429: the monthly limit that was reached. */
+  limit?: number;
+  /** With a 429: the month the limit applies to, as `YYYY-MM` (UTC). */
+  month?: string;
 }
 
 /**
@@ -25,7 +33,10 @@ export interface PreparedDomainProblem extends ProblemJson {
  * and `code`; display `detail`, don't parse it. `code` is the problem's code, for example
  * `invalid_argument` (400), `not_found` (404), `in_progress` (409: a preparation is already
  * running, read its status instead of resubmitting), `out_of_allowance` (429: no preparations
- * left this month), or `overloaded` / `disabled` (503); undefined when the body has none.
+ * left this month), `domain_rejection_limit` (429: this domain's preparations were rejected as
+ * many times as this month allows; don't retry it this month, other domains still work), or
+ * `overloaded` / `disabled` (503); undefined when the body has none. A
+ * `domain_rejection_limit` problem also carries `domain`, `rejected`, `limit` and `month`.
  */
 export class ZenRowsPreparedDomainError extends Error {
   readonly status: number;

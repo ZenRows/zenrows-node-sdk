@@ -145,6 +145,39 @@ describe("prepared domains", () => {
     });
   }
 
+  test("a 429 domain_rejection_limit keeps its own code and members and is not retried", async () => {
+    const retrying = new ZenRows(apiKey, { retries: 2 });
+    const detail =
+      "www.example.com had 3 rejected preparation attempts this month (failed verification); the limit is 3 per domain per month. This submission was not accepted and not counted against your allowance. New attempts for this domain reopen at the start of next month (UTC).";
+    const seen = stub(429, {
+      type: "https://docs.zenrows.com/api-error-codes#domain_rejection_limit",
+      title: "Domain rejection limit reached",
+      status: 429,
+      code: "domain_rejection_limit",
+      detail,
+      domain: "www.example.com",
+      rejected: 3,
+      limit: 3,
+      month: "2026-11",
+    });
+
+    const error = await retrying
+      .prepareDomain("www.example.com", ["https://www.example.com/"])
+      .catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ZenRowsPreparedDomainError);
+    const err = error as ZenRowsPreparedDomainError;
+    expect(err.status).toBe(429);
+    expect(err.code).toBe("domain_rejection_limit");
+    expect(err.detail).toBe(detail);
+    // Direct property access, so the exported type is checked too.
+    expect(err.problem?.domain).toBe("www.example.com");
+    expect(err.problem?.rejected).toBe(3);
+    expect(err.problem?.limit).toBe(3);
+    expect(err.problem?.month).toBe("2026-11");
+    expect(seen).toHaveLength(1);
+  });
+
   test("preparedDomainStatus rejects with not_found for a domain never submitted", async () => {
     stub(404, problem(404, "not_found"));
 

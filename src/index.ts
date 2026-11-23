@@ -224,8 +224,8 @@ export class ZenRows {
    * don't fetch pages and cost no credits.
    *
    * Rejects with a `TypeError` for an empty `domain`, before any request, and with
-   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400 `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or 503 `overloaded` /
-   * `disabled`.
+   * `ZenRowsPreparedDomainError` on a non-2xx answer, for example 400 `invalid_argument`, 409 `in_progress`, 429 `out_of_allowance` or
+   * `domain_rejection_limit`, or 503 `overloaded` / `disabled`.
    */
   public async prepareDomain(domain: string, exampleUrls: string[]): Promise<PreparedDomainStatus> {
     checkDomain(domain);
