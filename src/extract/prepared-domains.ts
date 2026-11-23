@@ -25,7 +25,10 @@ export interface PreparedDomainProblem extends ProblemJson {
  * and `code`; display `detail`, don't parse it. `code` is the problem's code, for example
  * `invalid_argument` (400), `not_found` (404), `in_progress` (409: a preparation is already
  * running, read its status instead of resubmitting), `out_of_allowance` (429: no preparations
- * left this month), or `overloaded` / `disabled` (503); undefined when the body has none.
+ * left this month), `domain_rejection_limit` (429: this domain's preparations were rejected as
+ * many times as this month allows; don't retry it this month, other domains still work), or
+ * `overloaded` / `disabled` (503); undefined when the body has none. A
+ * `domain_rejection_limit` problem also carries `domain`, `rejected`, `limit` and `month`.
  */
 export class ZenRowsPreparedDomainError extends Error {
   readonly status: number;
