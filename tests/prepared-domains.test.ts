@@ -170,12 +170,11 @@ describe("prepared domains", () => {
     expect(err.status).toBe(429);
     expect(err.code).toBe("domain_rejection_limit");
     expect(err.detail).toBe(detail);
-    expect(err.problem).toMatchObject({
-      domain: "www.example.com",
-      rejected: 3,
-      limit: 3,
-      month: "2026-11",
-    });
+    // Direct property access, so the exported type is checked too.
+    expect(err.problem?.domain).toBe("www.example.com");
+    expect(err.problem?.rejected).toBe(3);
+    expect(err.problem?.limit).toBe(3);
+    expect(err.problem?.month).toBe("2026-11");
     expect(seen).toHaveLength(1);
   });
 

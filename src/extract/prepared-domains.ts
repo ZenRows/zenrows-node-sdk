@@ -18,6 +18,14 @@ export interface PreparedDomainStatus {
 /** An RFC 9457 problem from the prepared-domains endpoints, which may carry a `reason`. */
 export interface PreparedDomainProblem extends ProblemJson {
   reason?: string;
+  /** With `domain_rejection_limit`: the domain that reached its limit. */
+  domain?: string;
+  /** With `domain_rejection_limit`: rejected preparations of the domain this month. */
+  rejected?: number;
+  /** With a 429: the monthly limit that was reached. */
+  limit?: number;
+  /** With a 429: the month the limit applies to, as `YYYY-MM` (UTC). */
+  month?: string;
 }
 
 /**
