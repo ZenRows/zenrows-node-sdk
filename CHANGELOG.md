@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/ZenRows/zenrows-node-sdk/compare/v2.7.0...v2.7.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **extract:** explain the 429 domain_rejection_limit answer from prepareDomain and type its members ([#68](https://github.com/ZenRows/zenrows-node-sdk/issues/68)) ([70801cb](https://github.com/ZenRows/zenrows-node-sdk/commit/70801cbb9eed097fd78539117f6285439f371a3c))
+
 ## [2.7.0](https://github.com/ZenRows/zenrows-node-sdk/compare/v2.6.0...v2.7.0) (2026-11-06)
 
 
